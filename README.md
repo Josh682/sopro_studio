@@ -1,6 +1,6 @@
-# Sound Processor v1.0
+# Sopro Studio
 
-A cross-platform desktop application for audio format conversion and AI-powered instrument separation.
+A cross-platform desktop application for high-fidelity audio processing, format conversion, and AI-powered instrument separation.
 
 ---
 
@@ -8,8 +8,11 @@ A cross-platform desktop application for audio format conversion and AI-powered 
 
 - **Audio Converter** — Cross-convert between MP3, WAV, and FLAC with format-specific settings (sample rate, bit depth, bitrate, compression)
 - **AI Separator** — Stem separation powered by **BS-RoFormer** (6-stem) and **MelBand-RoFormer** (vocals + instrumental), with a dynamic UI that adapts to any registered model
-- **Batch Processing** — Drag-and-drop, single file, folder, and batch modes
-- **Dark Theme** — Modern PyQt6 interface with Catppuccin Mocha color palette and sidebar navigation
+- **Key Detection** — Analyze audio to detect the musical key and evaluate confidence scores using the `librosa` Krumhansl-Schmuckler algorithm
+- **Pitch Shifter** — Batch transpose audio up or down in semitones without affecting the original tempo
+- **Tempo Changer** — Batch stretch or compress audio playback speed to match a target BPM or percentage without altering pitch
+- **Batch Processing** — Drag-and-drop, single file, folder, and batch modes across all tools
+- **Dark Theme** — Modern PyQt6 interface with Catppuccin Mocha color palette, watermarked backgrounds, and sidebar navigation
 
 ---
 
@@ -31,8 +34,8 @@ A cross-platform desktop application for audio format conversion and AI-powered 
 ## Installation
 
 ```bash
-git clone <repo-url> sound-processor
-cd sound-processor
+git clone https://github.com/Josh682/sopro_studio.git
+cd sopro_studio
 
 # Create and activate virtual environment (recommended)
 python -m venv .venv
@@ -62,13 +65,17 @@ The window opens to the **Home** dashboard. Use the left sidebar to navigate bet
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Sound Processor                                        │
-│ ┌──────────┐  ┌────────────────────────────────────┐   │
-│ │ 🏠 Home  │  │                                    │   │
-│ │ 🔄 Conv. │  │         Page Content Area          │   │
-│ │ 🧠 Sep.  │  │                                    │   │
-│ │ ⚙️ Sett. │  │                                    │   │
-│ └──────────┘  └────────────────────────────────────┘   │
+│  Sopro Studio                                           │
+│ ┌──────────┐  ┌────────────────────────────────────┐    │
+│ │ 🏠 Home  │  │                                    │    │
+│ │ 🔄 Conv. │  │         Page Content Area          │    │
+│ │ 🧠 Sep.  │  │                                    │    │
+│ │ 🔗 Comb. │  │                                    │    │
+│ │ 🎵 Key   │  │                                    │    │
+│ │ ↕️ Pitch │  │                                    │    │
+│ │ ⏱️ Tempo │  │                                    │    │
+│ │ ⚙️ Sett. │  │                                    │    │
+│ └──────────┘  └────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -77,6 +84,10 @@ The window opens to the **Home** dashboard. Use the left sidebar to navigate bet
 | 🏠 Home | Dashboard | Quick stats and app overview |
 | 🔄 Converter | Converter Page | Batch audio format conversion |
 | 🧠 Separator | Separator Page | AI-powered stem separation |
+| 🔗 Combiner | Combiner Page | Combine multiple audio tracks |
+| 🎵 Key Detect | Key Detection | Detect musical key of audio files |
+| ↕️ Pitch Shift | Pitch Shifter | Transpose audio pitch (semitones) |
+| ⏱️ Tempo Change | Tempo Changer | Stretch/compress playback speed |
 | ⚙️ Settings | Settings Page | Paths, FFmpeg, and preferences |
 
 ---
@@ -102,126 +113,36 @@ Click **Save Settings** after making changes.
 
 ---
 
-## How to Use: Audio Converter (🔄)
+## Core Tools
 
-The Converter page converts one or many audio files between **WAV**, **MP3**, and **FLAC** formats.
+### Audio Converter (🔄)
+Converts one or many audio files between **WAV**, **MP3**, and **FLAC** formats.
+- **WAV**: Bit depth (8, 16, 24, 32-bit)
+- **MP3**: Bitrate (128, 192, 256, 320 kbps)
+- **FLAC**: Compression level (0 to 8)
+- Optional **Peak Normalization** to 0 dBFS before encoding.
 
-### Step-by-Step
+### AI Stem Separator (🧠)
+Splits an audio track into individual stems (e.g., vocals and instrumental).
+- Choose between models like **BS-RoFormer (6 Stems)** and **MelBand-RoFormer**.
+- Model weights download automatically.
+- Outputs separate `.wav` files for each isolated stem.
 
-**1. Add files**
+### Key Detection (🎵)
+Analyzes audio to detect its musical key.
+- Displays the primary detected key.
+- Shows alternative key candidates and confidence percentages.
 
-- **Drag and drop** audio files or a whole folder onto the drop zone.
-- Or click the drop zone to open a file browser.
-- Added files appear in the **Selected Files** list below the drop zone.
-- To clear the list, click **Clear Selection**.
+### Pitch Shifter (↕️)
+Transposes audio up or down without altering the tempo.
+- Specify shift in semitones (e.g., +2 for up a whole step).
+- Outputs high-quality 24-bit WAV files.
 
-**2. Choose target format**
-
-Select the output format from the **Target Format** dropdown (WAV / MP3 / FLAC).  
-The settings panel below updates automatically:
-
-| Format | Available Settings |
-|---|---|
-| **WAV** | Bit depth: 8-bit, 16-bit, 24-bit, 32-bit float |
-| **MP3** | Bitrate: 128 / 192 / 256 / 320 kbps |
-| **FLAC** | Compression level: 0 (fastest) → 8 (smallest) |
-
-**3. Optional: Peak Normalise**
-
-Check **Peak Normalise Audio** to normalize each file's loudness to 0 dBFS before encoding.
-
-**4. Choose output folder**
-
-The default destination is from Settings. Click **Change Folder** to pick a different directory for this batch.
-
-**5. Start conversion**
-
-Click **Start Conversion**.  
-- A progress bar and ETA appear in the **Progress** panel.
-- Live status messages appear in the **Log** panel below.
-- Each file is processed independently — an error on one file does not abort the rest.
-
-**6. Cancel (optional)**
-
-Click **Cancel** at any time. The current file finishes cleanly, then processing stops.
-
-### Notes
-- Output files are **collision-safe**: if `song.wav` already exists in the output folder, the app creates `song_1.wav`, `song_2.wav`, etc.
-- Supported input formats: `.wav`, `.mp3`, `.flac`, `.ogg`, `.m4a`
-
----
-
-## How to Use: AI Stem Separator (🧠)
-
-The Separator page uses a deep-learning model to split an audio track into individual stems (e.g., vocals and instrumental).
-
-### Step-by-Step
-
-**1. Select a model**
-
-Choose from the **AI Model** dropdown at the top.  
-The model's description and expected output stems (e.g., `vocals`, `drums`, etc.) update automatically below.
-
-> **Available Models:**
-> - **BS-RoFormer (6 Stems):** Separates into `vocals`, `drums`, `bass`, `guitar`, `piano`, and `other`. Best for full music tracks.
-> - **MelBand-RoFormer Kim Vocal:** Produces two stems: `vocals` and `instrumental`.
-
-**2. Load an audio file**
-
-- **Drag and drop** a single audio file onto the drop zone.
-- Or click the drop zone to browse for a file.
-- The **File Details** panel on the right shows format, sample rate, channels, and duration after loading.
-
-**3. Choose output folder**
-
-The default destination is from Settings. Click **Change Folder** to override for this session.
-
-**4. Run separation**
-
-Click **Separate Stems**.
-
-What happens next:
-1. **Model Loading** — On first run, weights are downloaded to your models directory. This can take a few minutes depending on your internet connection. Subsequent runs use the cached weights instantly.
-2. **Inference** — The model processes the audio in chunks. Progress is reported in real time. (BS-RoFormer also accumulates chunks efficiently to prevent out-of-memory errors).
-3. **Stem Writing** — Each stem is written to the output folder as a separate `.wav` file named `<original-filename>_<stem>.wav`.
-
-Example output for `my_song.mp3` with the BS-RoFormer 6-stem model:
-```
-outputs/
-  my_song_vocals.wav
-  my_song_drums.wav
-  my_song_bass.wav
-  my_song_guitar.wav
-  my_song_piano.wav
-  my_song_other.wav
-```
-
-**5. Monitor progress**
-
-- The **Progress** bar shows overall completion percentage and ETA.
-- The **Log** panel shows key milestones: loading, chunk processing, and file writes.
-
-**6. Cancel (optional)**
-
-Click **Cancel** to stop after the current processing chunk. Output files written so far are preserved.
-
-### Tips for Best Results
-- Use **lossless sources** (WAV or FLAC) for highest separation quality.
-- Very short clips (< 5 seconds) may produce artifacts — the model is optimised for full songs.
-- If you run out of memory, reduce the **Chunk Size** in Settings and retry.
-
----
-
-## How to Use: Settings (⚙️)
-
-| Setting | Description |
-|---|---|
-| **Output Directory** | Default folder for all converted/separated files |
-| **Models Directory** | Where AI weight files are stored |
-| **FFmpeg Path** | Path to `ffmpeg` binary (leave blank to use system PATH) |
-| **Chunk Size** | Inference chunk size in samples (lower = less RAM, more passes) |
-
-Click **Save Settings** to persist. Click **Restore Defaults** to reset everything.
+### Tempo Changer (⏱️)
+Changes the playback speed of audio without affecting its pitch.
+- **BPM Mode**: Input original BPM and target BPM to auto-calculate the rate.
+- **Percentage Mode**: Input the exact speed adjustment percentage (e.g., +10%).
+- Outputs high-quality 24-bit WAV files.
 
 ---
 
@@ -240,57 +161,41 @@ tail -f logs/sound_processor.log    # follow live on macOS / Linux
 ## Project Structure
 
 ```
-sound-processor/
+sopro_studio/
 ├── main.py              # Application entry point
-├── gui/                 # PySide6 UI (pages + widgets)
-│   ├── main_window.py   # Sidebar shell and page switcher
-│   ├── home_page.py     # Dashboard overview
-│   ├── converter_page.py
-│   ├── separator_page.py
-│   ├── settings_page.py
-│   └── widgets/         # DropZone, LogPanel, ProgressPanel, StemPreview
-├── core/                # Audio engine, converter, separator, exporter
-├── ai/                  # Model registry and separator implementations
-│   ├── base_model.py    # BaseSeparatorModel interface + ModelMetadata
-│   ├── model_manager.py # Thread-safe lazy model loader
-│   ├── melband.py       # MelBand-RoFormer adapter
-│   └── bs_roformer.py   # BS-RoFormer 6-stem adapter
-├── workers/             # QThread workers for background processing
-│   ├── converter_worker.py
-│   └── separator_worker.py
-├── utils/               # Config, logging, validators, file utilities
-├── models/              # User-downloaded AI weights (gitignored)
-├── assets/              # Icons and themes (dark.qss)
+├── src/
+│   ├── gui/             # PySide6 UI (pages + widgets)
+│   │   ├── main_window.py     # Sidebar shell and page switcher
+│   │   ├── home_page.py       # Dashboard overview
+│   │   ├── watermarked_page.py# Base class for watermarked background pages
+│   │   ├── converter_page.py
+│   │   ├── separator_page.py
+│   │   ├── combiner_page.py
+│   │   ├── key_detection_page.py
+│   │   ├── pitch_shift_page.py
+│   │   ├── tempo_change_page.py
+│   │   ├── settings_page.py
+│   │   └── widgets/           # Reusable UI components
+│   ├── core/            # Audio engine, processor registry, exporter
+│   │   └── processors/        # Base processor and implementations
+│   ├── workers/         # QThread workers for background processing
+│   └── utils/           # Config, logging, validators, file utilities
+├── assets/              # Logos and themes (dark.qss)
+├── docs/                # Architecture and feature planning docs
 ├── outputs/             # Default output directory (gitignored)
 └── logs/                # Rotating log files (gitignored)
 ```
 
 ---
 
-## AI Models
+## Extending the App
 
-v1.0 ships with:
-- **MelBand-RoFormer Kim vocal model** (`melband-roformer-kim-vocals`), producing two stems: `vocals` and `instrumental`.
-- **BS-RoFormer 6-stem model** (`roformer-model-bs-roformer-ep_317_sdr_12.9755`), producing `vocals`, `drums`, `bass`, `guitar`, `piano`, and `other`.
+New processors can be easily added to Sopro Studio by subclassing `BaseProcessor` and registering them via `ProcessorRegistry`.
 
-### Adding a Custom Model
-
-New models can be added without touching the UI:
-
-1. Implement the `BaseSeparatorModel` interface in `ai/`:
-   ```python
-   from ai.base_model import BaseSeparatorModel, ModelMetadata
-
-   class MyModel(BaseSeparatorModel):
-       @property
-       def metadata(self) -> ModelMetadata: ...
-       def load(self) -> None: ...
-       def separate(self, audio, sample_rate, **kwargs) -> dict[str, np.ndarray]: ...
-   ```
-
-2. Register it in `ai/__init__.py` via `ModelManager.register_model()`.
-
-3. The Separator page will automatically list the new model in the dropdown and show its stems — no UI code changes required.
+1. Implement your processor logic inheriting from `BaseProcessor`.
+2. Register it in `src/core/processors/__init__.py`.
+3. Create a new UI page inheriting from `WatermarkedPage`.
+4. Connect it to the sidebar in `main_window.py`.
 
 ---
 
@@ -298,13 +203,11 @@ New models can be added without touching the UI:
 
 | Problem | Solution |
 |---|---|
-| `ffmpeg: command not found` | Install FFmpeg or set the full path in Settings → FFmpeg Path |
+| `ffmpeg: command not found` | Install FFmpeg or set the full path in Settings |
 | Model download hangs / fails | Check your internet connection; try re-clicking **Separate Stems** |
 | `Out of memory` during separation | Lower Chunk Size in Settings (try `176400` or `88200`) |
-| No audio files appear in batch | Ensure files end in `.wav`, `.mp3`, `.flac`, `.ogg`, or `.m4a` |
 | App opens but pages are blank | Run `python main.py` from the terminal and check the log output |
 | `PyQt6` import error | Activate your virtual environment: `source .venv/bin/activate` |
-| Output stems are silent | Make sure you are separating **music**. If you pass a voice recording to a 6-stem music model, the `drums`, `bass`, `guitar`, and `piano` tracks will correctly contain absolute silence! |
 
 ---
 
