@@ -1,0 +1,137 @@
+/* Premium Catppuccin Mocha themed stylesheet for Sound Processor */
+
+/* Base Window colors */
+QMainWindow {
+    background-color: #1e1e2e;
+}
+
+QWidget {
+    color: #cdd6f4;
+    font-family: "Outfit", "Inter", "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+
+/* Sidebar Styling */
+QWidget#Sidebar {
+    background-color: #11111b;
+    border-right: 1px solid #181825;
+}
+
+/* Sidebar Title */
+QLabel#SidebarTitle {
+    font-size: 16px;
+    font-weight: 800;
+    color: #f5c2e7;
+    margin-bottom: 20px;
+}
+
+/* Sidebar Navigation Buttons */
+QPushButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #a6adc8;
+    padding: 10px 16px;
+    text-align: left;
+    font-weight: 500;
+}
+
+QPushButton:hover {
+    background-color: #313244;
+    color: #cdd6f4;
+}
+
+QPushButton:checked {
+    background-color: #313244;
+    color: #cba6f7;
+    font-weight: bold;
+    border-left: 3px solid #cba6f7;
+    border-radius: 0px 6px 6px 0px;
+}
+
+/* Generic Input elements */
+QComboBox {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: #cdd6f4;
+    min-width: 120px;
+}
+
+QComboBox:hover {
+    border-color: #89b4fa;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+QComboBox::down-arrow {
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #a6adc8;
+    width: 0;
+    height: 0;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #1e1e2e;
+    border: 1px solid #313244;
+    color: #cdd6f4;
+    selection-background-color: #313244;
+    selection-color: #cba6f7;
+}
+
+QLineEdit {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: #cdd6f4;
+}
+
+QLineEdit:focus {
+    border-color: #cba6f7;
+}
+
+QCheckBox {
+    color: #a6adc8;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    background-color: #313244;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #cba6f7;
+    border-color: #cba6f7;
+    image: none; /* Can style with circular or check indicator if needed */
+}
+
+/* Scrollbar styling */
+QScrollBar:vertical {
+    background-color: #11111b;
+    width: 8px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #45475a;
+    min-height: 20px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #585b70;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
