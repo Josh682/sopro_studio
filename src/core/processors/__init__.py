@@ -6,6 +6,7 @@ from src.core.processors.track_combiner import TrackCombiner
 from src.core.processors.key_detector import KeyDetector
 from src.core.processors.pitch_shifter import PitchShifter
 from src.core.processors.tempo_changer import TempoChanger
+from src.core.processors.audio_trimmer import AudioTrimmer
 
 __all__ = [
     "FormatConverter",
@@ -14,4 +15,5 @@ __all__ = [
     "KeyDetector",
     "PitchShifter",
     "TempoChanger",
+    "AudioTrimmer",
 ]
