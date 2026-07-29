@@ -28,7 +28,7 @@ class DropZone(QLabel):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setMinimumHeight(160)
+        self.setMinimumHeight(80)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setWordWrap(True)
@@ -50,7 +50,7 @@ class DropZone(QLabel):
                 color: #a6adc8;
                 background-color: #1e1e2e;
                 font-size: 14px;
-                padding: 32px;
+                padding: 12px;
             }
             QLabel:hover {
                 border-color: #89b4fa;
@@ -70,7 +70,7 @@ class DropZone(QLabel):
                 color: #a6e3a1;
                 background-color: #313244;
                 font-size: 14px;
-                padding: 32px;
+                padding: 12px;
             }
             """
         )

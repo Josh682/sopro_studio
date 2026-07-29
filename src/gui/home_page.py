@@ -82,6 +82,16 @@ class HomePage(WatermarkedPage):
         )
         cards_layout.addWidget(self._tempo_card, 1, 2)
 
+        # Audio Trim Card
+        self._trim_card = self._build_card(
+            title="Audio Trim",
+            desc="Destructively crop audio to a specific time range with optional fades.",
+            btn_label="Open Audio Trim",
+            target_page="trimmer",
+            color="#f38ba8"  # Red
+        )
+        cards_layout.addWidget(self._trim_card, 2, 0)
+
         layout.addLayout(cards_layout)
 
         # Footer dashboard tip
