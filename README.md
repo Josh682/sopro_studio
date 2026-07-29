@@ -11,6 +11,7 @@ A cross-platform desktop application for high-fidelity audio processing, format 
 - **Key Detection** — Analyze audio to detect the musical key and evaluate confidence scores using the `librosa` Krumhansl-Schmuckler algorithm
 - **Pitch Shifter** — Batch transpose audio up or down in semitones without affecting the original tempo
 - **Tempo Changer** — Batch stretch or compress audio playback speed to match a target BPM or percentage without altering pitch
+- **Audio Trimmer** — Precisely trim audio files with interactive playback and batch processing support
 - **Batch Processing** — Drag-and-drop, single file, folder, and batch modes across all tools
 - **Dark Theme** — Modern PyQt6 interface with Catppuccin Mocha color palette, watermarked backgrounds, and sidebar navigation
 
@@ -71,6 +72,7 @@ The window opens to the **Home** dashboard. Use the left sidebar to navigate bet
 │ │ 🔄 Conv. │  │         Page Content Area          │    │
 │ │ 🧠 Sep.  │  │                                    │    │
 │ │ 🔗 Comb. │  │                                    │    │
+│ │ ✂️ Trim  │  │                                    │    │
 │ │ 🎵 Key   │  │                                    │    │
 │ │ ↕️ Pitch │  │                                    │    │
 │ │ ⏱️ Tempo │  │                                    │    │
@@ -85,6 +87,7 @@ The window opens to the **Home** dashboard. Use the left sidebar to navigate bet
 | 🔄 Converter | Converter Page | Batch audio format conversion |
 | 🧠 Separator | Separator Page | AI-powered stem separation |
 | 🔗 Combiner | Combiner Page | Combine multiple audio tracks |
+| ✂️ Audio Trim | Trimmer Page | Trim audio with interactive player |
 | 🎵 Key Detect | Key Detection | Detect musical key of audio files |
 | ↕️ Pitch Shift | Pitch Shifter | Transpose audio pitch (semitones) |
 | ⏱️ Tempo Change | Tempo Changer | Stretch/compress playback speed |
@@ -127,6 +130,11 @@ Splits an audio track into individual stems (e.g., vocals and instrumental).
 - Choose between models like **BS-RoFormer (6 Stems)** and **MelBand-RoFormer**.
 - Model weights download automatically.
 - Outputs separate `.wav` files for each isolated stem.
+
+### Audio Trimmer (✂️)
+Precisely trim audio files in either interactive Single mode or Batch mode.
+- Set start and end times with optional millisecond-level fade-in/out.
+- Interactive mode includes a full media player to listen and mark trim points.
 
 ### Key Detection (🎵)
 Analyzes audio to detect its musical key.
@@ -171,6 +179,7 @@ sopro_studio/
 │   │   ├── converter_page.py
 │   │   ├── separator_page.py
 │   │   ├── combiner_page.py
+│   │   ├── trimmer_page.py
 │   │   ├── key_detection_page.py
 │   │   ├── pitch_shift_page.py
 │   │   ├── tempo_change_page.py
