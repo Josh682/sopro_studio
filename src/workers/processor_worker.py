@@ -69,13 +69,40 @@ class ProcessorWorker(QThread):
                 self.signals.log.emit(message)
 
         try:
-            results = self._processor.process(
-                input_paths=self._input_paths,
-                output_dir=self._output_dir,
-                options=self._options,
-                on_progress=progress_cb,
-                cancel_flag=self._cancel_flag,
-            )
+            if getattr(self._processor, "processing_mode", None) and self._processor.processing_mode.value == "file":
+                results = {}
+                total_files = len(self._input_paths)
+                for idx, input_path in enumerate(self._input_paths):
+                    if self._cancel_flag.is_set():
+                        break
+                    
+                    base_progress = idx / total_files
+                    def local_progress(fraction: float, msg: str) -> None:
+                        overall = base_progress + (fraction / total_files)
+                        progress_cb(overall, f"[{input_path.name}] {msg}")
+                        
+                    try:
+                        out_path = self._processor.process_file(
+                            input_path=input_path,
+                            output_dir=self._output_dir,
+                            options=self._options,
+                            on_progress=local_progress,
+                            cancel_flag=self._cancel_flag,
+                        )
+                        if out_path:
+                            results[input_path] = out_path
+                            self.signals.log.emit(f"Processed: {out_path.name}")
+                    except Exception as e:
+                        log.exception(f"Error processing {input_path}")
+                        results[input_path] = {"error": str(e)}
+            else:
+                results = self._processor.process(
+                    input_paths=self._input_paths,
+                    output_dir=self._output_dir,
+                    options=self._options,
+                    on_progress=progress_cb,
+                    cancel_flag=self._cancel_flag,
+                )
             
             if self._cancel_flag.is_set():
                 self.signals.log.emit(f"{processor_name} cancelled by user.")

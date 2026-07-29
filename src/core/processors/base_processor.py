@@ -4,11 +4,18 @@ Defines the base interface for all audio processors and the registry
 for dynamic discovery.
 """
 
+from enum import Enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, ClassVar
 import threading
+
+
+class ProcessingMode(Enum):
+    """Defines how a processor handles files."""
+    BATCH = "batch"   # Processor handles the batch loop natively
+    FILE = "file"     # Processor handles one file path at a time
 
 
 @dataclass
@@ -38,13 +45,23 @@ class ProcessorMetadata:
 class BaseProcessor(ABC):
     """Abstract base class for all audio processors.
     
-    A processor encapsulates a specific audio transformation workflow,
-    handling its own I/O via the AudioEngine and ExportEngine.
+    A processor encapsulates a specific audio transformation workflow.
     """
     
     metadata: ClassVar[ProcessorMetadata]
+    processing_mode: ClassVar[ProcessingMode] = ProcessingMode.BATCH
 
-    @abstractmethod
+    def process_file(
+        self,
+        input_path: Path,
+        output_dir: Path,
+        options: dict[str, Any],
+        on_progress: Callable[[float, str], None] | None = None,
+        cancel_flag: threading.Event | None = None,
+    ) -> Path:
+        """Process a single file (used when processing_mode == FILE)."""
+        raise NotImplementedError("process_file must be implemented for FILE mode.")
+
     def process(
         self,
         input_paths: list[Path],
