@@ -11,3 +11,4 @@ melband-roformer-infer>=0.1
 ml-collections
 PyYAML
 bs-roformer-infer>=0.1.5
+pyloudnorm>=0.1.1

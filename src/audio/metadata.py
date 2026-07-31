@@ -31,9 +31,28 @@ class AudioInfo:
     sample_rate: int
     channels: int
     format: str
-    codec: str = "unknown"
-    bit_rate: int = 0
-    tags: dict[str, str] = field(default_factory=dict)
+    codec:       str = "unknown"
+    bit_rate:    int = 0
+    tags:        dict[str, str] = field(default_factory=dict)
+
+    # Added for Audio Information / V3
+    bit_depth:       int | None = None
+    file_size_bytes: int = 0
+    peak_dbfs:       float | None = None
+    rms_dbfs:        float | None = None
+    integrated_lufs: float | None = None
+
+    @property
+    def duration_formatted(self) -> str:
+        """Format duration as HH:MM:SS.ms."""
+        mins, secs = divmod(self.duration, 60)
+        hours, mins = divmod(mins, 60)
+        return f"{int(hours):02d}:{int(mins):02d}:{secs:06.3f}"
+
+    @property
+    def file_size_mb(self) -> float:
+        """Return file size in megabytes."""
+        return self.file_size_bytes / (1024 * 1024)
 
 
 class ProbeError(RuntimeError):
@@ -165,6 +184,19 @@ def _parse_probe_output(data: dict, path: Path) -> AudioInfo:
             or 0
         )
         format_name = fmt.get("format_name", path.suffix.lstrip(".")).split(",")[0]
+        
+        bit_depth = None
+        bps = audio_stream.get("bits_per_sample") or audio_stream.get("bits_per_raw_sample")
+        if bps and str(bps).isdigit() and int(bps) > 0:
+            bit_depth = int(bps)
+
+        file_size_bytes = 0
+        size_str = fmt.get("size")
+        if size_str and str(size_str).isdigit():
+            file_size_bytes = int(size_str)
+        elif path.exists():
+            file_size_bytes = path.stat().st_size
+
         tags: dict[str, str] = {
             k: str(v)
             for k, v in {
@@ -188,4 +220,6 @@ def _parse_probe_output(data: dict, path: Path) -> AudioInfo:
         codec=codec,
         bit_rate=bit_rate,
         tags=tags,
+        bit_depth=bit_depth,
+        file_size_bytes=file_size_bytes,
     )
