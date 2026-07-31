@@ -91,6 +91,26 @@ class HomePage(WatermarkedPage):
             color="#f38ba8"  # Red
         )
         cards_layout.addWidget(self._trim_card, 2, 0)
+        
+        # Loudness Normalize Card
+        self._loudness_card = self._build_card(
+            title="Loudness Normalize",
+            desc="Standardize track volumes to EBU R128 targets (LUFS) for streaming or broadcast.",
+            btn_label="Open Normalizer",
+            target_page="loudness",
+            color="#89dceb"  # Sky Blue
+        )
+        cards_layout.addWidget(self._loudness_card, 2, 1)
+
+        # Audio Information Card
+        self._metadata_card = self._build_card(
+            title="Audio Information",
+            desc="Analyze detailed audio statistics including True Peak, LUFS, bit depth, and metadata.",
+            btn_label="Open Audio Info",
+            target_page="metadata",
+            color="#b4befe"  # Lavender
+        )
+        cards_layout.addWidget(self._metadata_card, 2, 2)
 
         layout.addLayout(cards_layout)
 

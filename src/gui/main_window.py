@@ -25,6 +25,8 @@ from src.gui.key_detection_page import KeyDetectionPage
 from src.gui.pitch_shift_page import PitchShiftPage
 from src.gui.tempo_change_page import TempoChangePage
 from src.gui.trimmer_page import TrimmerPage
+from src.gui.loudness_page import LoudnessPage
+from src.gui.metadata_page import MetadataPage
 from src.gui.settings_page import SettingsPage
 
 log = logging.getLogger("sound_processor.gui.main_window")
@@ -68,6 +70,8 @@ class MainWindow(QMainWindow):
             "pitch_shift": PitchShiftPage(self),
             "tempo_change": TempoChangePage(self),
             "trimmer": TrimmerPage(self),
+            "loudness": LoudnessPage(self),
+            "metadata": MetadataPage(self),
             "settings": SettingsPage(self),
         }
         for page in self._pages.values():
@@ -101,6 +105,8 @@ class MainWindow(QMainWindow):
             self._log_handler.log_message.connect(self._pages["pitch_shift"]._log_panel.append_log)
             self._log_handler.log_message.connect(self._pages["tempo_change"]._log_panel.append_log)
             self._log_handler.log_message.connect(self._pages["trimmer"]._log_panel.append_log)
+            self._log_handler.log_message.connect(self._pages["loudness"]._log_panel.append_log)
+            self._log_handler.log_message.connect(self._pages["metadata"]._log_panel.append_log)
 
             logging.getLogger("sound_processor").addHandler(self._log_handler)
             log.debug("Qt logging bridge initialized successfully.")
@@ -164,6 +170,8 @@ class MainWindow(QMainWindow):
             ("pitch_shift", "Pitch Shift"),
             ("tempo_change", "Tempo Change"),
             ("trimmer", "Audio Trim"),
+            ("loudness", "Loudness Normalize"),
+            ("metadata", "Information"),
             ("settings", "Settings"),
         ]:
             btn = QPushButton(label)
