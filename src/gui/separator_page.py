@@ -256,7 +256,7 @@ class SeparatorPage(WatermarkedPage):
         # Instantiate worker thread
         output_dir = Path(self._output_edit.text())
         processor = ProcessorRegistry.get_processor("stem_separator")
-        options = {"model_id": model_id}
+        options = {"model_id": model_id, "manager": self._manager}
         self._worker = ProcessorWorker(processor, [self._file_path], output_dir, options)
         
         # Connect signals

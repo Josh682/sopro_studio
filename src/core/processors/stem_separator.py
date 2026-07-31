@@ -53,7 +53,13 @@ class StemSeparator(BaseProcessor):
         if on_progress:
             on_progress(0.0, f"Loading model {model_id}...")
             
-        model = ModelManager.get_model(model_id)
+        manager = options.get("manager")
+        if not manager:
+            # Fallback for CLI/testing if no manager is injected
+            from src.ai import create_default_manager
+            manager = create_default_manager(options.get("models_dir"))
+            
+        model = manager.get_model(model_id)
 
         results = {}
         total = len(input_paths)
