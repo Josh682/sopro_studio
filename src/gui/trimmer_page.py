@@ -28,6 +28,8 @@ from src.core.processor_registry import ProcessorRegistry
 from src.gui.widgets.drop_zone import DropZone
 from src.gui.widgets.log_panel import LogPanel
 from src.gui.widgets.progress_panel import ProgressPanel
+from src.gui.widgets.trim_overlay import TrimmerWaveformContainer
+from src.workers.waveform_worker import WaveformWorker, WaveformPeaks
 from src.utils.config import AppConfig
 from src.workers.processor_worker import ProcessorWorker
 from src.gui.watermarked_page import WatermarkedPage
@@ -330,6 +332,7 @@ class _SinglePane(QWidget):
         self._file: Path | None = None
         self._duration: float = 0.0
         self._seek_updating = False
+        self._waveform_worker: WaveformWorker | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -364,8 +367,14 @@ class _SinglePane(QWidget):
         player_lbl.setStyleSheet(SECTION_STYLE)
         pll.addWidget(player_lbl)
         pll.addWidget(_hline())
+        
+        self._waveform = TrimmerWaveformContainer()
+        self._waveform.waveform_view.seek_started.connect(self._on_seek_started)
+        self._waveform.waveform_view.seek_moved.connect(self._on_seek_moved)
+        self._waveform.waveform_view.seek_ended.connect(self._on_seek_ended)
+        self._waveform.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
 
-        # Seek row
+        # Time row with waveform
         time_row = QHBoxLayout()
         self._pos_lbl = QLabel("00:00.000")
         self._pos_lbl.setStyleSheet(
@@ -383,20 +392,8 @@ class _SinglePane(QWidget):
         self._dur_lbl.setFixedWidth(80)
         self._dur_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self._seek_slider = QSlider(Qt.Orientation.Horizontal)
-        self._seek_slider.setRange(0, 1000)
-        self._seek_slider.setValue(0)
-        self._seek_slider.setStyleSheet(
-            "QSlider::groove:horizontal { height: 4px; background: #313244; border-radius: 2px; }"
-            f"QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}"
-            "QSlider::handle:horizontal { width: 14px; height: 14px; background: #cdd6f4;"
-            " border-radius: 7px; margin: -5px 0; }"
-        )
-        self._seek_slider.sliderPressed.connect(self._on_slider_pressed)
-        self._seek_slider.sliderMoved.connect(self._on_slider_moved)
-        self._seek_slider.sliderReleased.connect(self._on_seek_released)
         time_row.addWidget(self._pos_lbl)
-        time_row.addWidget(self._seek_slider)
+        time_row.addWidget(self._waveform, 1) # Waveform takes expanding space
         time_row.addWidget(self._dur_lbl)
         pll.addLayout(time_row)
 
@@ -485,6 +482,10 @@ class _SinglePane(QWidget):
 
         self._s_start = _input("e.g. 0.000  (seconds)")
         self._s_end   = _input("e.g. 5.000  (seconds)")
+        
+        self._s_start.textChanged.connect(self._update_overlay_markers)
+        self._s_end.textChanged.connect(self._update_overlay_markers)
+        
         self._s_fi    = _input("e.g. 500  (optional)")
         self._s_fo    = _input("e.g. 500  (optional)")
         tly.addLayout(_row("Start Time (s):", self._s_start))
@@ -564,6 +565,34 @@ class _SinglePane(QWidget):
                   self._set_start_btn, self._set_end_btn, self._export_btn):
             b.setEnabled(True)
         self._log.append_log(f"Loaded: {p.name}")
+        
+        if self._waveform_worker and self._waveform_worker.isRunning():
+            self._waveform_worker.cancel()
+            
+        self._waveform_worker = WaveformWorker(p)
+        self._waveform_worker.peaks_ready.connect(self._on_peaks_ready)
+        self._waveform_worker.start()
+
+    def _on_peaks_ready(self, peaks: WaveformPeaks) -> None:
+        self._waveform.waveform_view.set_peaks(peaks)
+        self._update_overlay_markers()
+        
+    def _on_seek_started(self) -> None:
+        self._seek_updating = True
+        self._poll_timer.stop()
+
+    def _on_seek_moved(self, time_sec: float) -> None:
+        if self._duration > 0:
+            self._pos_lbl.setText(_seconds_to_str(time_sec))
+            self._waveform.overlay.set_playhead(time_sec)
+
+    def _on_seek_ended(self, time_sec: float) -> None:
+        if self._duration > 0:
+            target_ms = int(time_sec * 1000)
+            self._player.setPosition(target_ms)
+        self._seek_updating = False
+        if self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self._poll_timer.start()
 
     # ── Playback ──────────────────────────────────────────────────────────────
 
@@ -609,27 +638,22 @@ class _SinglePane(QWidget):
     def _update_ui_position(self, pos_ms: int) -> None:
         pos_s = pos_ms / 1000.0
         self._pos_lbl.setText(_seconds_to_str(pos_s))
-        if self._duration > 0:
-            self._seek_slider.setValue(int(pos_ms / (self._duration * 1000) * 1000))
+        self._waveform.overlay.set_playhead(pos_s)
 
-    def _on_slider_pressed(self) -> None:
-        self._seek_updating = True
-        self._poll_timer.stop()
-
-    def _on_slider_moved(self, value: int) -> None:
-        if self._duration > 0:
-            pos_s = value / 1000.0 * self._duration
-            self._pos_lbl.setText(_seconds_to_str(pos_s))
-
-    def _on_seek_released(self) -> None:
-        if self._duration > 0:
-            target_ms = int(self._seek_slider.value() / 1000.0 * self._duration * 1000)
-            self._player.setPosition(target_ms)
-        self._seek_updating = False
-        if self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self._poll_timer.start()
 
     # ── Trim markers ──────────────────────────────────────────────────────────
+
+    def _update_overlay_markers(self) -> None:
+        try:
+            s_text = self._s_start.text().strip()
+            e_text = self._s_end.text().strip()
+            
+            start_sec = float(s_text) if s_text else -1.0
+            end_sec = float(e_text) if e_text else -1.0
+            
+            self._waveform.overlay.set_trim_markers(start_sec, end_sec)
+        except ValueError:
+            pass # Ignore invalid inputs during typing
 
     def _mark_start(self) -> None:
         pos = self._player.position() / 1000.0
