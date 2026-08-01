@@ -13,6 +13,9 @@ a = Analysis(
     ],
     datas=[
         ('assets', 'assets'),
+        ('/opt/homebrew/share/qt/plugins/platforms', 'platforms'),
+        ('/opt/homebrew/share/qt/plugins/styles', 'styles'),
+        ('/opt/homebrew/share/qt/plugins/multimedia', 'multimedia'),
     ],
     hiddenimports=[
         'qtpy',
@@ -21,6 +24,10 @@ a = Analysis(
         'torch',
         'torchaudio',
         'melband_roformer_infer',
+        'PyQt6',
+        'PyQt6.QtCore',
+        'PyQt6.QtGui',
+        'PyQt6.QtWidgets',
     ],
     hookspath=[],
     hooksconfig={},

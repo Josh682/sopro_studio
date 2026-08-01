@@ -54,3 +54,5 @@ logs/
 .DS_Store
 __pycache__/
 *.pyc
+assets/bin/
+test_sine*

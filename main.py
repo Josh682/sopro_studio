@@ -9,6 +9,13 @@ from pathlib import Path
 
 os.environ.setdefault("QT_API", "pyqt6")
 
+# Fix for PyInstaller Qt plugins
+if getattr(sys, 'frozen', False):
+    bundle_dir = Path(sys.executable).parent
+    plugins_dir = bundle_dir.parent / 'Frameworks'
+    if (plugins_dir / 'platforms').exists():
+        os.environ["QT_PLUGIN_PATH"] = str(plugins_dir)
+
 from qtpy.QtWidgets import QApplication  # noqa: E402
 from src.gui.main_window import MainWindow  # noqa: E402
 from src.utils.logger import setup_logger  # noqa: E402
