@@ -4,6 +4,8 @@ from pathlib import Path
 
 from qtpy.QtCore import QSettings
 
+from src.utils.paths import outputs_dir, models_dir, resource_path
+
 
 class AppConfig:
     """Application settings persisted across sessions."""
@@ -16,8 +18,7 @@ class AppConfig:
 
     @property
     def output_dir(self) -> Path:
-        default = Path(__file__).resolve().parent.parent / "outputs"
-        return Path(self._settings.value("output_dir", str(default)))
+        return Path(self._settings.value("output_dir", str(outputs_dir())))
 
     @output_dir.setter
     def output_dir(self, path: Path) -> None:
@@ -25,8 +26,7 @@ class AppConfig:
 
     @property
     def models_dir(self) -> Path:
-        default = Path(__file__).resolve().parent.parent / "models"
-        return Path(self._settings.value("models_dir", str(default)))
+        return Path(self._settings.value("models_dir", str(models_dir())))
 
     @models_dir.setter
     def models_dir(self, path: Path) -> None:
@@ -34,11 +34,41 @@ class AppConfig:
 
     @property
     def ffmpeg_path(self) -> str:
-        return self._settings.value("ffmpeg_path", "ffmpeg")
+        # Check bundled ffmpeg first
+        bundled = resource_path("assets/bin/ffmpeg")
+        if bundled.exists():
+            default = str(bundled)
+        else:
+            default = "ffmpeg"
+        return self._settings.value("ffmpeg_path", default)
 
     @ffmpeg_path.setter
     def ffmpeg_path(self, path: str) -> None:
         self._settings.setValue("ffmpeg_path", path)
+
+    @property
+    def auto_check_updates(self) -> bool:
+        # Returns True if missing
+        val = self._settings.value("auto_check_updates", True)
+        if isinstance(val, str):
+            return val.lower() == "true"
+        return bool(val)
+
+    @auto_check_updates.setter
+    def auto_check_updates(self, check: bool) -> None:
+        self._settings.setValue("auto_check_updates", check)
+
+    @property
+    def last_update_check(self) -> float:
+        # Timestamp in seconds since epoch
+        try:
+            return float(self._settings.value("last_update_check", 0.0))
+        except (ValueError, TypeError):
+            return 0.0
+
+    @last_update_check.setter
+    def last_update_check(self, timestamp: float) -> None:
+        self._settings.setValue("last_update_check", timestamp)
 
     @property
     def melband_chunk_size(self) -> int:

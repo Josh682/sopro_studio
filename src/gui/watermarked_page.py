@@ -4,6 +4,7 @@ from pathlib import Path
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QPainter, QPixmap
 from qtpy.QtWidgets import QWidget
+from src.utils.paths import resource_path
 
 class WatermarkedPage(QWidget):
     """Base class for pages that display a subtle background logo watermark."""
@@ -12,7 +13,7 @@ class WatermarkedPage(QWidget):
         super().__init__(parent)
         
         self._bg_pixmap = None
-        logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "sopro_studio_logo.png"
+        logo_path = resource_path("assets/sopro_studio_logo.png")
         if logo_path.exists():
             original_pixmap = QPixmap(str(logo_path))
             self._bg_pixmap = original_pixmap.scaled(

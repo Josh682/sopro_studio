@@ -7,6 +7,7 @@ from pathlib import Path
 
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -19,6 +20,7 @@ from qtpy.QtWidgets import (
 )
 
 from src.utils import AppConfig
+from src.utils.paths import outputs_dir, models_dir
 
 log = logging.getLogger("sound_processor.gui.settings_page")
 
@@ -67,6 +69,11 @@ class SettingsPage(WatermarkedPage):
         models_row.addWidget(self._models_edit)
         models_row.addWidget(self._models_btn)
         form_layout.addRow("AI Models Folder:", models_row)
+
+        # Auto Update Toggle
+        self._auto_update_checkbox = QCheckBox("Automatically check for updates")
+        self._auto_update_checkbox.setStyleSheet("color: #cdd6f4;")
+        form_layout.addRow("", self._auto_update_checkbox)
 
         # 3. FFmpeg Path Row
         self._ffmpeg_edit = QLineEdit()
@@ -147,6 +154,7 @@ class SettingsPage(WatermarkedPage):
         """Populate widgets with current saved configurations."""
         self._output_edit.setText(str(self._config.output_dir))
         self._models_edit.setText(str(self._config.models_dir))
+        self._auto_update_checkbox.setChecked(self._config.auto_check_updates)
         self._ffmpeg_edit.setText(self._config.ffmpeg_path)
         
         # Convert samples back to seconds (default 352800 / 44100 = 8s)
@@ -174,6 +182,7 @@ class SettingsPage(WatermarkedPage):
         """Persist user entries to system config settings."""
         self._config.output_dir = Path(self._output_edit.text().strip())
         self._config.models_dir = Path(self._models_edit.text().strip())
+        self._config.auto_check_updates = self._auto_update_checkbox.isChecked()
         self._config.ffmpeg_path = self._ffmpeg_edit.text().strip()
         
         seconds = self._chunk_slider.value()
@@ -183,11 +192,12 @@ class SettingsPage(WatermarkedPage):
 
     def _load_defaults(self) -> None:
         """Reset forms to standard built-in defaults."""
-        default_out = Path(__file__).resolve().parent.parent / "outputs"
-        default_models = Path(__file__).resolve().parent.parent / "models"
+        default_out = outputs_dir()
+        default_models = models_dir()
         
         self._output_edit.setText(str(default_out))
         self._models_edit.setText(str(default_models))
+        self._auto_update_checkbox.setChecked(True)
         self._ffmpeg_edit.setText("ffmpeg")
         self._chunk_slider.setValue(8)  # 8 seconds
         self._update_chunk_label(8)

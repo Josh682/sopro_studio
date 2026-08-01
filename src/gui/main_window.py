@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import time
 
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QPixmap, QIcon
+from qtpy.QtCore import Qt, QUrl
+from qtpy.QtGui import QPixmap, QIcon, QDesktopServices
+from src.utils.paths import resource_path
+from src.utils.updater import UpdateCheckerWorker
 from qtpy.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -15,6 +18,7 @@ from qtpy.QtWidgets import (
     QStackedWidget,
     QVBoxLayout,
     QWidget,
+    QFrame,
 )
 
 from src.gui.converter_page import ConverterPage
@@ -40,7 +44,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Sopro Studio v1.0")
         self.setMinimumSize(1024, 680)
         
-        logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "sopro_studio_logo.png"
+        logo_path = resource_path("assets/sopro_studio_logo.png")
         if logo_path.exists():
             self.setWindowIcon(QIcon(str(logo_path)))
 
@@ -51,9 +55,65 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         
-        layout = QHBoxLayout(central)
+        main_vbox = QVBoxLayout(central)
+        main_vbox.setContentsMargins(0, 0, 0, 0)
+        main_vbox.setSpacing(0)
+
+        # Update Banner (Hidden by default)
+        self._update_banner = QFrame()
+        self._update_banner.setStyleSheet("""
+            QFrame {
+                background-color: #313244;
+                border-bottom: 1px solid #89b4fa;
+            }
+        """)
+        self._update_banner.hide()
+        banner_layout = QHBoxLayout(self._update_banner)
+        banner_layout.setContentsMargins(20, 10, 20, 10)
+        
+        self._update_label = QLabel()
+        self._update_label.setStyleSheet("color: #cdd6f4; border: none; font-size: 13px;")
+        
+        self._update_download_btn = QPushButton("Download")
+        self._update_download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #89b4fa;
+                color: #1e1e2e;
+                font-weight: bold;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover { background-color: #74c7ec; }
+        """)
+        self._update_download_btn.clicked.connect(self._on_update_download)
+        
+        self._update_dismiss_btn = QPushButton("Later")
+        self._update_dismiss_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #45475a;
+                color: #cdd6f4;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover { background-color: #585b70; }
+        """)
+        self._update_dismiss_btn.clicked.connect(self._update_banner.hide)
+        
+        banner_layout.addWidget(self._update_label)
+        banner_layout.addStretch()
+        banner_layout.addWidget(self._update_dismiss_btn)
+        banner_layout.addWidget(self._update_download_btn)
+        
+        main_vbox.addWidget(self._update_banner)
+        
+        # Sidebar and stack container
+        content_widget = QWidget()
+        layout = QHBoxLayout(content_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        main_vbox.addWidget(content_widget)
 
         # Sidebar navigation panel
         sidebar = self._build_sidebar()
@@ -81,9 +141,47 @@ class MainWindow(QMainWindow):
 
         # Connect global python logger messages to log panels in pages
         self._setup_logging_bridge()
+        
+        # Schedule update check 5 seconds after startup
+        from qtpy.QtCore import QTimer
+        QTimer.singleShot(5000, self._check_for_updates)
 
         # Navigate to homepage by default
         self._navigate("home")
+
+    def _check_for_updates(self) -> None:
+        """Run update check in the background if enabled and 24h passed."""
+        if not hasattr(self, "_config") or not self._config.auto_check_updates:
+            return
+            
+        now = time.time()
+        last_check = self._config.last_update_check
+        
+        # Check if 24 hours (86400 seconds) have passed
+        if now - last_check < 86400:
+            return
+            
+        # Update last check time
+        self._config.last_update_check = now
+        
+        self._updater_worker = UpdateCheckerWorker(parent=self)
+        self._updater_worker.update_available.connect(self._show_update_banner)
+        self._updater_worker.start()
+
+    def _show_update_banner(self, version: str, notes: str, download_url: str) -> None:
+        """Display the unobtrusive update banner."""
+        self._update_download_url = download_url
+        self._update_label.setText(
+            f"<b>Update Available!</b> Sopro Studio {version} is now available. "
+            f"<span style='color: #a6adc8;'>{notes}</span>"
+        )
+        self._update_banner.show()
+        
+    def _on_update_download(self) -> None:
+        """Open browser to the download URL."""
+        if hasattr(self, "_update_download_url"):
+            QDesktopServices.openUrl(QUrl(self._update_download_url))
+            self._update_banner.hide()
 
     def _setup_logging_bridge(self) -> None:
         """Setup logging bridge via QtLogHandler to forward all app logs to page consoles."""
@@ -115,7 +213,7 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self) -> None:
         """Read and load stylesheet rules from dark.qss."""
-        theme_path = Path(__file__).resolve().parent.parent / "assets" / "themes" / "dark.qss"
+        theme_path = resource_path("assets/themes/dark.qss")
         if theme_path.exists():
             try:
                 self.setStyleSheet(theme_path.read_text(encoding="utf-8"))
@@ -145,7 +243,7 @@ class MainWindow(QMainWindow):
         header_layout.setSpacing(12)
 
         logo_label = QLabel()
-        logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "sopro_logo_only.png"
+        logo_path = resource_path("assets/sopro_logo_only.png")
         if logo_path.exists():
             pixmap = QPixmap(str(logo_path))
             scaled_pixmap = pixmap.scaledToHeight(32, Qt.TransformationMode.SmoothTransformation)

@@ -20,6 +20,7 @@ from src.ai.base_model import (
     ModelMetadata,
     ModelNotLoadedError,
 )
+from src.utils.paths import models_dir as models_dir_path
 
 log = logging.getLogger("sound_processor.ai.model_manager")
 
@@ -48,7 +49,7 @@ class ModelManager:
 
     def __init__(self, models_dir: Path | None = None) -> None:
         if models_dir is None:
-            models_dir = Path(__file__).resolve().parent.parent / "models"
+            models_dir = models_dir_path
         self._models_dir: Path = models_dir
 
         # model_id → factory (zero-arg callable returning a BaseSeparatorModel)

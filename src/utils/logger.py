@@ -13,6 +13,8 @@ except ImportError:
     _QT_AVAILABLE = False
     QObject = object  # type: ignore[assignment,misc]
 
+from src.utils.paths import logs_dir
+
 
 class QtLogHandler(logging.Handler, QObject):
     """Bridges Python log records to the GUI LogPanel via a Qt signal.
@@ -74,7 +76,7 @@ def setup_logger(
         return logger
 
     if log_dir is None:
-        log_dir = Path(__file__).resolve().parent.parent / "logs"
+        log_dir = logs_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
 
     logger.setLevel(level)
