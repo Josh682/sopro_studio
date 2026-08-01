@@ -14,6 +14,7 @@ from src.core.processors.base_processor import (
     ProcessingMode,
     ProcessorMetadata,
 )
+from src.utils.config import AppConfig
 
 log = logging.getLogger("sound_processor.core.processors.loudness_normalizer")
 
@@ -30,6 +31,10 @@ class LoudnessNormalizer(BaseProcessor):
         tags=["loudness", "lufs", "true-peak", "ebu-r128"],
     )
     processing_mode = ProcessingMode.FILE
+
+    def __init__(self) -> None:
+        app_config = AppConfig()
+        self._ffmpeg_bin = app_config.ffmpeg_path
 
     @classmethod
     def get_parameter_descriptors(cls) -> list[ParameterDescriptor]:
@@ -85,7 +90,7 @@ class LoudnessNormalizer(BaseProcessor):
             on_progress(0.1, "Pass 1: Analyzing loudness...")
 
         pass1_cmd = [
-            "ffmpeg", "-y", "-i", str(input_path),
+            self._ffmpeg_bin, "-y", "-i", str(input_path),
             "-af", f"loudnorm=I={target_lufs}:TP={max_tp}:LRA={lra}:print_format=json",
             "-f", "null", "/dev/null"
         ]
@@ -150,7 +155,7 @@ class LoudnessNormalizer(BaseProcessor):
         )
 
         pass2_cmd = [
-            "ffmpeg", "-y", "-i", str(input_path),
+            self._ffmpeg_bin, "-y", "-i", str(input_path),
             "-af", af_filter,
             "-map_metadata", "0",
             "-id3v2_version", "3",
