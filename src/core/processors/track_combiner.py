@@ -41,7 +41,15 @@ class TrackCombiner(BaseProcessor):
 
 
 
-    def process(self, files: list[Path], output_dir: Path, options: dict[str, Any]) -> dict[Path, Path]:
+    def process(
+        self,
+        input_paths: list[Path],
+        output_dir: Path,
+        options: dict[str, Any],
+        on_progress=None,
+        cancel_flag=None,
+    ) -> dict[Path, Path]:
+        files = input_paths
         if not files:
             log.warning("No files provided for combination.")
             return {}
