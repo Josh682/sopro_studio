@@ -15,6 +15,7 @@ from qtpy.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -32,6 +33,13 @@ from src.gui.trimmer_page import TrimmerPage
 from src.gui.loudness_page import LoudnessPage
 from src.gui.metadata_page import MetadataPage
 from src.gui.settings_page import SettingsPage
+
+# V4.0 Audio Enhancement & Repair Pages
+from src.gui.declip_page import DeclipPage
+from src.gui.denoise_page import DenoisePage
+from src.gui.dereverb_page import DereverbPage
+from src.gui.voice_enhancement_page import VoiceEnhancementPage
+from src.gui.restoration_page import RestorationPage
 
 log = logging.getLogger("sound_processor.gui.main_window")
 
@@ -132,6 +140,11 @@ class MainWindow(QMainWindow):
             "trimmer": TrimmerPage(self),
             "loudness": LoudnessPage(self),
             "metadata": MetadataPage(self),
+            "declip": DeclipPage(self),
+            "denoise": DenoisePage(self),
+            "dereverb": DereverbPage(self),
+            "voice_enhancement": VoiceEnhancementPage(self),
+            "restoration": RestorationPage(self),
             "settings": SettingsPage(self),
         }
         for page in self._pages.values():
@@ -196,15 +209,13 @@ class MainWindow(QMainWindow):
             self._log_handler.setLevel(logging.INFO)
 
             # Route logs to all tool consoles
-            self._log_handler.log_message.connect(self._pages["converter"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["separator"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["combiner"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["key_detection"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["pitch_shift"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["tempo_change"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["trimmer"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["loudness"]._log_panel.append_log)
-            self._log_handler.log_message.connect(self._pages["metadata"]._log_panel.append_log)
+            for key in [
+                "converter", "separator", "combiner", "key_detection", "pitch_shift",
+                "tempo_change", "trimmer", "loudness", "metadata",
+                "declip", "denoise", "dereverb", "voice_enhancement", "restoration"
+            ]:
+                if key in self._pages and hasattr(self._pages[key], "_log_panel"):
+                    self._log_handler.log_message.connect(self._pages[key]._log_panel.append_log)
 
             logging.getLogger("sound_processor").addHandler(self._log_handler)
             log.debug("Qt logging bridge initialized successfully.")
@@ -222,44 +233,56 @@ class MainWindow(QMainWindow):
                 log.warning("Could not read stylesheet: %s", exc)
 
     def _build_sidebar(self) -> QWidget:
-        """Create and style sidebar layouts with button navigation triggers."""
+        """Create and style sidebar layouts with collapsible group and button navigation triggers."""
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(220)
+        sidebar.setFixedWidth(230)
         sidebar.setStyleSheet(
             "#Sidebar { background-color: #11111b; border-right: 1px solid #313244; }"
-            "QPushButton { background-color: transparent; color: #a6adc8; border: none; padding: 12px 16px; text-align: left; font-size: 14px; font-weight: 500; border-radius: 6px; margin: 0 12px; }"
+            "QPushButton { background-color: transparent; color: #a6adc8; border: none; padding: 10px 14px; text-align: left; font-size: 13px; font-weight: 500; border-radius: 6px; margin: 0 8px; }"
             "QPushButton:hover { background-color: #1e1e2e; color: #cdd6f4; }"
             "QPushButton:checked { background-color: #313244; color: #cba6f7; font-weight: bold; }"
+            "QScrollArea { border: none; background: transparent; }"
         )
 
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 24, 0, 12)
-        layout.setSpacing(8)
+        outer_layout = QVBoxLayout(sidebar)
+        outer_layout.setContentsMargins(0, 20, 0, 12)
+        outer_layout.setSpacing(8)
 
+        # Header with Logo
         header_widget = QWidget()
         header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(16, 0, 16, 16)
+        header_layout.setContentsMargins(16, 0, 16, 12)
         header_layout.setSpacing(12)
 
         logo_label = QLabel()
         logo_path = resource_path("assets/sopro_logo_only.png")
         if logo_path.exists():
             pixmap = QPixmap(str(logo_path))
-            scaled_pixmap = pixmap.scaledToHeight(32, Qt.TransformationMode.SmoothTransformation)
+            scaled_pixmap = pixmap.scaledToHeight(28, Qt.TransformationMode.SmoothTransformation)
             logo_label.setPixmap(scaled_pixmap)
             header_layout.addWidget(logo_label)
 
         title_label = QLabel("Sopro Studio")
         title_label.setObjectName("SidebarTitle")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #cdd6f4;")
+        title_label.setStyleSheet("font-size: 17px; font-weight: bold; color: #cdd6f4;")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
 
-        layout.addWidget(header_widget)
+        outer_layout.addWidget(header_widget)
+
+        # Scroll area for navigation buttons to handle any screen resolution
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(4)
 
         self._nav_buttons: dict[str, QPushButton] = {}
-        for key, label in [
+
+        # Core Tools
+        core_nav = [
             ("home", "Home"),
             ("converter", "Converter"),
             ("separator", "Separator"),
@@ -270,22 +293,78 @@ class MainWindow(QMainWindow):
             ("trimmer", "Audio Trim"),
             ("loudness", "Loudness Normalize"),
             ("metadata", "Information"),
-            ("settings", "Settings"),
-        ]:
+        ]
+
+        for key, label in core_nav:
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.clicked.connect(lambda checked, k=key: self._navigate(k))
             self._nav_buttons[key] = btn
-            layout.addWidget(btn)
+            scroll_layout.addWidget(btn)
 
-        layout.addStretch()
+        # Collapsible "Enhancement" Section
+        self._enhancement_expanded = True
+        self._enhancement_toggle_btn = QPushButton("🔧 Enhancement ▾")
+        self._enhancement_toggle_btn.setStyleSheet(
+            "QPushButton { background-color: #181825; color: #cba6f7; font-weight: bold; font-size: 13px; padding: 10px 14px; border-radius: 6px; margin: 6px 8px; }"
+            "QPushButton:hover { background-color: #313244; color: #f5c2e7; }"
+        )
+        self._enhancement_toggle_btn.clicked.connect(self._toggle_enhancement_section)
+        scroll_layout.addWidget(self._enhancement_toggle_btn)
+
+        # Sub-buttons container
+        self._enhancement_container = QWidget()
+        enhancement_sub_layout = QVBoxLayout(self._enhancement_container)
+        enhancement_sub_layout.setContentsMargins(12, 0, 0, 0)
+        enhancement_sub_layout.setSpacing(4)
+
+        enhancement_nav = [
+            ("declip", "Declip Repair"),
+            ("denoise", "AI Denoise"),
+            ("dereverb", "AI Dereverb"),
+            ("voice_enhancement", "Voice Enhance"),
+            ("restoration", "Restoration"),
+        ]
+
+        for key, label in enhancement_nav:
+            btn = QPushButton(f"  • {label}")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda checked, k=key: self._navigate(k))
+            self._nav_buttons[key] = btn
+            enhancement_sub_layout.addWidget(btn)
+
+        scroll_layout.addWidget(self._enhancement_container)
+
+        # Settings
+        settings_btn = QPushButton("⚙️ Settings")
+        settings_btn.setCheckable(True)
+        settings_btn.clicked.connect(lambda checked: self._navigate("settings"))
+        self._nav_buttons["settings"] = settings_btn
+        scroll_layout.addWidget(settings_btn)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        outer_layout.addWidget(scroll, stretch=1)
+
         return sidebar
+
+    def _toggle_enhancement_section(self) -> None:
+        """Toggle visibility of the collapsible Enhancement tools section."""
+        self._enhancement_expanded = not self._enhancement_expanded
+        self._enhancement_container.setVisible(self._enhancement_expanded)
+        arrow = "▾" if self._enhancement_expanded else "▸"
+        self._enhancement_toggle_btn.setText(f"🔧 Enhancement {arrow}")
 
     def _navigate(self, page_key: str) -> None:
         """Switch active page in stacked layout and toggle button checked highlight."""
         if page_key not in self._pages:
             log.warning("Attempted to navigate to unknown page: %s", page_key)
             return
+
+        # If navigating to an enhancement sub-tool, auto-expand the section if collapsed
+        enhancement_keys = ["declip", "denoise", "dereverb", "voice_enhancement", "restoration"]
+        if page_key in enhancement_keys and not self._enhancement_expanded:
+            self._toggle_enhancement_section()
 
         for key, btn in self._nav_buttons.items():
             btn.setChecked(key == page_key)
