@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChunkyButton States Specification · Audio Quick Toolkit</title>
+  <link rel="stylesheet" href="tokens.css">
+</head>
+<body>
+  <div class="btn-spec-canvas">
+    <!-- Top Specification Header Bar -->
+    <header class="btn-spec-header">
+      <div class="btn-spec-header-title">
+        <span class="spec-badge">BUTTON SPEC</span>
+        <span>ChunkyButton Tactile 3D States & Module Matrix</span>
+      </div>
+      <div class="btn-spec-header-meta">
+        <span>HEIGHT: var(--btn-h) [38px]</span>
+        <span>PADDING-X: var(--btn-px) [16px]</span>
+        <span>RADIUS: var(--radius-button) [8px]</span>
+        <span>TRAVEL: 3px DOWN</span>
+        <span>RELIEF: 4px → 1px</span>
+        <span>TIMING: 80ms LINEAR</span>
+      </div>
+    </header>
+
+    <!-- BAGIAN A: Detail Zoom 4x (Normal vs Pressed) -->
+    <section class="btn-spec-card">
+      <div class="btn-spec-card-header">
+        <span class="panel-tag">[BAGIAN A] DETAIL ZOOM 4× (AUDIO CONVERTER)</span>
+        <span class="panel-meta">TRAVEL 3px (12px @ 4×) · RELIEF 4px → 1px · BASELINE SEJAJAR</span>
+      </div>
+
+      <div class="zoom-container">
+        <svg class="zoom-svg" viewBox="0 0 1020 184">
+          <defs>
+            <!-- Arrow markers -->
+            <marker id="arrowTop" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M 0 6 L 3 0 L 6 6 Z" fill="var(--accent-normalize)" />
+            </marker>
+            <marker id="arrowBottom" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M 0 0 L 3 6 L 6 0 Z" fill="var(--accent-normalize)" />
+            </marker>
+          </defs>
+
+          <!-- Ground Baseline (Chassis Surface) at Y = 174 -->
+          <line x1="100" y1="174" x2="920" y2="174" stroke="rgba(255, 255, 255, 0.2)" stroke-width="1.5" />
+          <text x="510" y="182" fill="var(--text-muted)" font-family="var(--font-family-mono)" font-size="7.5" font-weight="600" text-anchor="middle" letter-spacing="0.5">GROUND BASELINE (Chassis Plane Y = 174 @ 4×)</text>
+
+          <!-- ==============================================================
+               LEFT BUTTON: NORMAL STATE (Zoom 4x)
+               Body: 280 x 152 at Y = 6. Shadow: 16px relief (4px unzoomed) to Y = 174.
+               ============================================================== -->
+          <!-- 3D Shadow Layer (4px @ 4x = 16px) -->
+          <rect x="170" y="22" width="280" height="152" rx="32" fill="#2D5EA6" />
+          <!-- Button Body Layer (Height 38px @ 4x = 152px) -->
+          <rect x="170" y="6" width="280" height="152" rx="32" fill="#5B9BFA" />
+          <!-- Button Text -->
+          <text x="310" y="84" fill="#090B0E" font-family="var(--font-family-ui)" font-size="24" font-weight="700" text-anchor="middle">Open Converter</text>
+          <text x="310" y="108" fill="#090B0E" opacity="0.65" font-family="var(--font-family-mono)" font-size="11" font-weight="700" text-anchor="middle">[ STATE: NORMAL ]</text>
+
+          <!-- ==============================================================
+               RIGHT BUTTON: PRESSED STATE (Zoom 4x)
+               Body: 280 x 152 at Y = 18 (+12px @ 4x = +3px). Shadow: 4px relief (1px unzoomed) to Y = 174.
+               ============================================================== -->
+          <!-- 3D Shadow Layer (1px @ 4x = 4px) -->
+          <rect x="570" y="22" width="280" height="152" rx="32" fill="#2D5EA6" />
+          <!-- Button Body Layer (+12px translateY) -->
+          <rect x="570" y="18" width="280" height="152" rx="32" fill="#5B9BFA" />
+          <!-- Button Text -->
+          <text x="710" y="96" fill="#090B0E" font-family="var(--font-family-ui)" font-size="24" font-weight="700" text-anchor="middle">Open Converter</text>
+          <text x="710" y="120" fill="#090B0E" opacity="0.65" font-family="var(--font-family-mono)" font-size="11" font-weight="700" text-anchor="middle">[ STATE: PRESSED ]</text>
+
+          <!-- ==============================================================
+               HORIZONTAL GUIDE LINES (SURFACE ELEVATION DIFFERENCE = 3px)
+               ============================================================== -->
+          <!-- Guideline 1: Normal Top Surface (Y = 6) -->
+          <line x1="120" y1="6" x2="900" y2="6" stroke="var(--accent-normalize)" stroke-width="1" stroke-dasharray="3 3" opacity="0.8" />
+          <!-- Guideline 2: Pressed Top Surface (Y = 18, +12px @ 4x = +3px) -->
+          <line x1="120" y1="18" x2="900" y2="18" stroke="var(--accent-normalize)" stroke-width="1" stroke-dasharray="3 3" opacity="0.8" />
+
+          <!-- Center Dimension: Travel Distance Callout (3px / 12px @ 4x) -->
+          <line x1="510" y1="6" x2="510" y2="18" stroke="var(--accent-normalize)" stroke-width="1.5" marker-start="url(#arrowTop)" marker-end="url(#arrowBottom)" />
+          <g transform="translate(450, 24)">
+            <rect x="0" y="0" width="120" height="24" rx="3" fill="#090B0E" fill-opacity="0.92" stroke="var(--accent-normalize)" stroke-width="0.8" />
+            <text x="60" y="10" fill="var(--accent-normalize)" font-family="var(--font-family-mono)" font-size="7.5" font-weight="700" text-anchor="middle">JARAK TURUN: 3px</text>
+            <text x="60" y="19" fill="var(--accent-normalize)" opacity="0.8" font-family="var(--font-family-mono)" font-size="6.5" text-anchor="middle">ΔY = +12px @ 4×</text>
+          </g>
+
+          <!-- ==============================================================
+               DIMENSION ANNOTATIONS: NORMAL (LEFT)
+               ============================================================== -->
+          <!-- Normal Total Height Dimension Bar (Y = 6 to Y = 174: 168px = 42px unzoomed) -->
+          <line x1="140" y1="6" x2="140" y2="174" stroke="var(--accent-normalize)" stroke-width="1.25" marker-start="url(#arrowTop)" marker-end="url(#arrowBottom)" />
+          <polyline points="140,90 110,90" stroke="var(--accent-normalize)" stroke-width="1" fill="none" />
+          <g transform="translate(6, 74)">
+            <rect x="0" y="0" width="104" height="32" rx="3" fill="#090B0E" fill-opacity="0.92" stroke="var(--accent-normalize)" stroke-width="0.8" />
+            <text x="52" y="11" fill="var(--accent-normalize)" font-family="var(--font-family-mono)" font-size="7.5" font-weight="700" text-anchor="middle">TINGGI TOTAL: 42px</text>
+            <text x="52" y="20" fill="var(--accent-normalize)" opacity="0.8" font-family="var(--font-family-mono)" font-size="6.5" text-anchor="middle">168px @ 4×</text>
+            <text x="52" y="27" fill="var(--accent-normalize)" opacity="0.8" font-family="var(--font-family-mono)" font-size="6" text-anchor="middle">Body 38px + Relief 4px</text>
+          </g>
+
+          <!-- Normal Shadow Relief Callout (Y = 158 to Y = 174: 16px = 4px unzoomed) -->
+          <line x1="165" y1="158" x2="165" y2="174" stroke="var(--accent-normalize)" stroke-width="1.25" marker-start="url(#arrowTop)" marker-end="url(#arrowBottom)" />
+          <polyline points="165,166 200,166 216,150" stroke="var(--accent-normalize)" stroke-width="1" fill="none" />
+          <g transform="translate(218, 140)">
+            <rect x="0" y="0" width="112" height="20" rx="3" fill="#090B0E" fill-opacity="0.92" stroke="var(--accent-normalize)" stroke-width="0.8" />
+            <text x="56" y="9" fill="var(--accent-normalize)" font-family="var(--font-family-mono)" font-size="7.5" font-weight="700" text-anchor="middle">SHADOW RELIEF: 4px</text>
+            <text x="56" y="16" fill="var(--accent-normalize)" opacity="0.8" font-family="var(--font-family-mono)" font-size="6.5" text-anchor="middle">16px @ 4× (--accent-X-dark)</text>
+          </g>
+
+          <!-- ==============================================================
+               DIMENSION ANNOTATIONS: PRESSED (RIGHT)
+               ============================================================== -->
+          <!-- Pressed Total Height Dimension Bar (Y = 18 to Y = 174: 156px = 39px unzoomed) -->
+          <line x1="880" y1="18" x2="880" y2="174" stroke="var(--accent-normalize)" stroke-width="1.25" marker-start="url(#arrowTop)" marker-end="url(#arrowBottom)" />
+          <polyline points="880,96 910,96" stroke="var(--accent-normalize)" stroke-width="1" fill="none" />
+          <g transform="translate(910, 80)">
+            <rect x="0" y="0" width="104" height="32" rx="3" fill="#090B0E" fill-opacity="0.92" stroke="var(--accent-normalize)" stroke-width="0.8" />
+            <text x="52" y="11" fill="var(--accent-normalize)" font-family="var(--font-family-mono)" font-size="7.5" font-weight="700" text-anchor="middle">TINGGI TOTAL: 39px</text>
+            <text x="52" y="20" fill="var(--accent-normalize)" opacity="0.8" font-family="var(--font-family-mono)" font-size="6.5" text-anchor="middle">156px @ 4×</text>
+            <text x="52" y="27" fill="var(--accent-normalize)" opacity="0.8" font-family="var(--font-family-mono)" font-size="6" text-anchor="middle">Body 38px + Relief 1px</text>
+          </g>
+
+          <!-- Pressed Shadow Relief Callout (Y = 170 to Y = 174: 4px = 1px unzoomed) -->
+          <line x1="855" y1="170" x2="855" y2="174" stroke="var(--accent-normalize)" stroke-width="1.25" />
+          <polyline points="855,172 820,172 804,154" stroke="var(--accent-normalize)" stroke-width="1" fill="none" />
+          <g transform="translate(690, 144)">
+            <rect x="0" y="0" width="112" height="20" rx="3" fill="#090B0E" fill-opacity="0.92" stroke="var(--accent-normalize)" stroke-width="0.8" />
+            <text x="56" y="9" fill="var(--accent-normalize)" font-family="var(--font-family-mono)" font-size="7.5" font-weight="700" text-anchor="middle">SHADOW RELIEF: 1px</text>
+            <text x="56" y="16" fill="var(--accent-normalize)" opacity="0.8" font-family="var(--font-family-mono)" font-size="6.5" text-anchor="middle">4px @ 4× (−3px travel)</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- BAGIAN B: Matriks 9 Modul x 5 State -->
+    <section class="btn-spec-card">
+      <div class="btn-spec-card-header">
+        <span class="panel-tag">[BAGIAN B] MATRIKS 9 MODUL × 5 STATE</span>
+        <span class="panel-meta">ALL STATES DISPLAYED VIA STATIC CLASSES (.is-normal, .is-hover, .is-pressed, .is-focus, .is-disabled)</span>
+      </div>
+
+      <div class="matrix-container">
+        <!-- Matrix Column Headers (Mono 11px) -->
+        <div class="matrix-header-row">
+          <span class="matrix-col-title">MODUL</span>
+          <span class="matrix-col-title">NORMAL</span>
+          <span class="matrix-col-title">HOVER (-1px)</span>
+          <span class="matrix-col-title">PRESSED (+3px)</span>
+          <span class="matrix-col-title">FOCUS (RING 2px)</span>
+          <span class="matrix-col-title">DISABLED (0.4 OPACITY)</span>
+        </div>
+
+        <!-- Row 1: Audio Converter (MOD-01) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-01]</span>
+            <span>Converter</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-converter is-normal" type="button">Open Converter</button></div>
+          <div class="matrix-cell"><button class="btn btn-converter is-hover" type="button">Open Converter</button></div>
+          <div class="matrix-cell"><button class="btn btn-converter is-pressed" type="button">Open Converter</button></div>
+          <div class="matrix-cell"><button class="btn btn-converter is-focus" type="button">Open Converter</button></div>
+          <div class="matrix-cell"><button class="btn btn-converter is-disabled" type="button" disabled>Open Converter</button></div>
+        </div>
+
+        <!-- Row 2: AI Stem Separator (MOD-02) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-02]</span>
+            <span>Separator</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-separator is-normal" type="button">Open Separator</button></div>
+          <div class="matrix-cell"><button class="btn btn-separator is-hover" type="button">Open Separator</button></div>
+          <div class="matrix-cell"><button class="btn btn-separator is-pressed" type="button">Open Separator</button></div>
+          <div class="matrix-cell"><button class="btn btn-separator is-focus" type="button">Open Separator</button></div>
+          <div class="matrix-cell"><button class="btn btn-separator is-disabled" type="button" disabled>Open Separator</button></div>
+        </div>
+
+        <!-- Row 3: Track Combiner (MOD-03) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-03]</span>
+            <span>Combiner</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-combiner is-normal" type="button">Open Combiner</button></div>
+          <div class="matrix-cell"><button class="btn btn-combiner is-hover" type="button">Open Combiner</button></div>
+          <div class="matrix-cell"><button class="btn btn-combiner is-pressed" type="button">Open Combiner</button></div>
+          <div class="matrix-cell"><button class="btn btn-combiner is-focus" type="button">Open Combiner</button></div>
+          <div class="matrix-cell"><button class="btn btn-combiner is-disabled" type="button" disabled>Open Combiner</button></div>
+        </div>
+
+        <!-- Row 4: Key & Tempo Detect (MOD-04) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-04]</span>
+            <span>Detector</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-detect is-normal" type="button">Open Detector</button></div>
+          <div class="matrix-cell"><button class="btn btn-detect is-hover" type="button">Open Detector</button></div>
+          <div class="matrix-cell"><button class="btn btn-detect is-pressed" type="button">Open Detector</button></div>
+          <div class="matrix-cell"><button class="btn btn-detect is-focus" type="button">Open Detector</button></div>
+          <div class="matrix-cell"><button class="btn btn-detect is-disabled" type="button" disabled>Open Detector</button></div>
+        </div>
+
+        <!-- Row 5: Pitch Shifter (MOD-05) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-05]</span>
+            <span>Pitch Shifter</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-pitch is-normal" type="button">Open Shifter</button></div>
+          <div class="matrix-cell"><button class="btn btn-pitch is-hover" type="button">Open Shifter</button></div>
+          <div class="matrix-cell"><button class="btn btn-pitch is-pressed" type="button">Open Shifter</button></div>
+          <div class="matrix-cell"><button class="btn btn-pitch is-focus" type="button">Open Shifter</button></div>
+          <div class="matrix-cell"><button class="btn btn-pitch is-disabled" type="button" disabled>Open Shifter</button></div>
+        </div>
+
+        <!-- Row 6: Tempo Change (MOD-06) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-06]</span>
+            <span>Tempo</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-tempo is-normal" type="button">Open Tempo</button></div>
+          <div class="matrix-cell"><button class="btn btn-tempo is-hover" type="button">Open Tempo</button></div>
+          <div class="matrix-cell"><button class="btn btn-tempo is-pressed" type="button">Open Tempo</button></div>
+          <div class="matrix-cell"><button class="btn btn-tempo is-focus" type="button">Open Tempo</button></div>
+          <div class="matrix-cell"><button class="btn btn-tempo is-disabled" type="button" disabled>Open Tempo</button></div>
+        </div>
+
+        <!-- Row 7: Audio Trim (MOD-07) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-07]</span>
+            <span>Audio Trim</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-trim is-normal" type="button">Open Trimmer</button></div>
+          <div class="matrix-cell"><button class="btn btn-trim is-hover" type="button">Open Trimmer</button></div>
+          <div class="matrix-cell"><button class="btn btn-trim is-pressed" type="button">Open Trimmer</button></div>
+          <div class="matrix-cell"><button class="btn btn-trim is-focus" type="button">Open Trimmer</button></div>
+          <div class="matrix-cell"><button class="btn btn-trim is-disabled" type="button" disabled>Open Trimmer</button></div>
+        </div>
+
+        <!-- Row 8: Loudness Normalize (MOD-08) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-08]</span>
+            <span>Normalize</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-normalize is-normal" type="button">Open Normalizer</button></div>
+          <div class="matrix-cell"><button class="btn btn-normalize is-hover" type="button">Open Normalizer</button></div>
+          <div class="matrix-cell"><button class="btn btn-normalize is-pressed" type="button">Open Normalizer</button></div>
+          <div class="matrix-cell"><button class="btn btn-normalize is-focus" type="button">Open Normalizer</button></div>
+          <div class="matrix-cell"><button class="btn btn-normalize is-disabled" type="button" disabled>Open Normalizer</button></div>
+        </div>
+
+        <!-- Row 9: Audio Information (MOD-09) -->
+        <div class="matrix-row">
+          <div class="matrix-mod-name">
+            <span class="matrix-mod-tag">[MOD-09]</span>
+            <span>Information</span>
+          </div>
+          <div class="matrix-cell"><button class="btn btn-info is-normal" type="button">Open Inspector</button></div>
+          <div class="matrix-cell"><button class="btn btn-info is-hover" type="button">Open Inspector</button></div>
+          <div class="matrix-cell"><button class="btn btn-info is-pressed" type="button">Open Inspector</button></div>
+          <div class="matrix-cell"><button class="btn btn-info is-focus" type="button">Open Inspector</button></div>
+          <div class="matrix-cell"><button class="btn btn-info is-disabled" type="button" disabled>Open Inspector</button></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Quick Toolkit - Dashboard Grid</title>
+  <link rel="stylesheet" href="tokens.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Titlebar -->
+    <header class="titlebar">
+      <div class="traffic-lights">
+        <span class="traffic-dot traffic-close"></span>
+        <span class="traffic-dot traffic-minimize"></span>
+        <span class="traffic-dot traffic-zoom"></span>
+      </div>
+      <div class="titlebar-center">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 10v4"></path>
+          <path d="M6 6v12"></path>
+          <path d="M10 3v18"></path>
+          <path d="M14 8v8"></path>
+          <path d="M18 5v14"></path>
+          <path d="M22 10v4"></path>
+        </svg>
+        <span class="brand-wordmark">Audio Quick Toolkit</span>
+      </div>
+      <div class="titlebar-right">
+        <button class="settings-button" type="button" aria-label="Settings">
+          <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Viewport (Grid 3x3) -->
+    <main class="main-viewport">
+      <div class="cards-grid">
+        <!-- 1: MOD-01 Audio Converter -->
+        <article class="card card-mod-01" data-module="MOD-01">
+          <div class="card-header">
+            <span class="card-tag">[MOD-01]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+              <path d="M21 3v5h-5"></path>
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+              <path d="M8 16H3v5"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">Audio Converter</h2>
+          <p class="card-desc">Convert between WAV, MP3, FLAC and AIFF.</p>
+          <button class="card-button" type="button">Open Converter</button>
+        </article>
+
+        <!-- 2: MOD-02 AI Stem Separator -->
+        <article class="card card-mod-02" data-module="MOD-02">
+          <div class="card-header">
+            <span class="card-tag">[MOD-02]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 3h5v5"></path>
+              <path d="M8 3H3v5"></path>
+              <path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"></path>
+              <path d="m15 9 6-6"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">AI Stem Separator</h2>
+          <p class="card-desc">Extract clean vocals and instrumentals from any audio file.</p>
+          <button class="card-button" type="button">Open Separator</button>
+        </article>
+
+        <!-- 3: MOD-03 Track Combiner -->
+        <article class="card card-mod-03" data-module="MOD-03">
+          <div class="card-header">
+            <span class="card-tag">[MOD-03]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="18" r="3"></circle>
+              <circle cx="6" cy="6" r="3"></circle>
+              <path d="M6 21V9a9 9 0 0 0 9 9"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">Track Combiner</h2>
+          <p class="card-desc">Merge stems and tracks into a single audio file.</p>
+          <button class="card-button" type="button">Open Combiner</button>
+        </article>
+
+        <!-- 4: MOD-04 Key & Tempo Detect -->
+        <article class="card card-mod-04" data-module="MOD-04">
+          <div class="card-header">
+            <span class="card-tag">[MOD-04]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">Key & Tempo Detect</h2>
+          <p class="card-desc">Find the musical key and BPM of any track.</p>
+          <button class="card-button" type="button">Open Detector</button>
+        </article>
+
+        <!-- 5: MOD-05 Pitch Shifter -->
+        <article class="card card-mod-05" data-module="MOD-05">
+          <div class="card-header">
+            <span class="card-tag">[MOD-05]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" x2="4" y1="21" y2="14"></line>
+              <line x1="4" x2="4" y1="10" y2="3"></line>
+              <line x1="12" x2="12" y1="21" y2="12"></line>
+              <line x1="12" x2="12" y1="8" y2="3"></line>
+              <line x1="20" x2="20" y1="21" y2="16"></line>
+              <line x1="20" x2="20" y1="12" y2="3"></line>
+              <line x1="1" x2="7" y1="14" y2="14"></line>
+              <line x1="9" x2="15" y1="8" y2="8"></line>
+              <line x1="17" x2="23" y1="16" y2="16"></line>
+            </svg>
+          </div>
+          <h2 class="card-title">Pitch Shifter</h2>
+          <p class="card-desc">Transpose audio up or down by semitones.</p>
+          <button class="card-button" type="button">Open Shifter</button>
+        </article>
+
+        <!-- 6: MOD-06 Tempo Change -->
+        <article class="card card-mod-06" data-module="MOD-06">
+          <div class="card-header">
+            <span class="card-tag">[MOD-06]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m12 14 4-4"></path>
+              <path d="M3.34 19a10 10 0 1 1 17.32 0"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">Tempo Change</h2>
+          <p class="card-desc">Speed up or slow down audio without changing pitch.</p>
+          <button class="card-button" type="button">Open Tempo</button>
+        </article>
+
+        <!-- 7: MOD-07 Audio Trim -->
+        <article class="card card-mod-07" data-module="MOD-07">
+          <div class="card-header">
+            <span class="card-tag">[MOD-07]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6" cy="6" r="3"></circle>
+              <path d="M8.12 8.12 12 12"></path>
+              <path d="M20 4 8.12 15.88"></path>
+              <circle cx="6" cy="18" r="3"></circle>
+              <path d="M14.8 14.8 20 20"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">Audio Trim</h2>
+          <p class="card-desc">Cut audio to the exact start and end you need.</p>
+          <button class="card-button" type="button">Open Trimmer</button>
+        </article>
+
+        <!-- 8: MOD-08 Loudness Normalize -->
+        <article class="card card-mod-08" data-module="MOD-08">
+          <div class="card-header">
+            <span class="card-tag">[MOD-08]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">Loudness Normalize</h2>
+          <p class="card-desc">Match your audio to streaming loudness targets.</p>
+          <button class="card-button" type="button">Open Normalizer</button>
+        </article>
+
+        <!-- 9: MOD-09 Audio Information -->
+        <article class="card card-mod-09" data-module="MOD-09">
+          <div class="card-header">
+            <span class="card-tag">[MOD-09]</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 16v-4"></path>
+              <path d="M12 8h.01"></path>
+            </svg>
+          </div>
+          <h2 class="card-title">Audio Information</h2>
+          <p class="card-desc">Inspect sample rate, bit depth, peaks and loudness.</p>
+          <button class="card-button" type="button">Open Inspector</button>
+        </article>
+      </div>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="statusbar">
+      <div class="statusbar-left">
+        <span class="statusbar-dot"></span>
+        <span class="statusbar-text">CoreAudio · 48 kHz</span>
+      </div>
+      <div class="statusbar-right">
+        <span class="statusbar-text">No active jobs</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
