@@ -1,17 +1,24 @@
 #!/bin/bash
-cd "$(dirname "$0")"
-source .venv/bin/activate
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-# Guard: make sure pip's PyQt6 is not shadowing the Homebrew version
-PYQT6_LOC=$(python -c "import PyQt6; print(PyQt6.__file__)" 2>/dev/null)
-if echo "$PYQT6_LOC" | grep -q "site-packages/PyQt6" && ! echo "$PYQT6_LOC" | grep -q "/opt/homebrew/"; then
-    echo ""
-    echo "⚠️  WARNING: pip-installed PyQt6 detected at: $PYQT6_LOC"
-    echo "   This will cause a 'Could not find Qt platform plugin cocoa' crash."
-    echo "   Removing it now and using the Homebrew version instead..."
-    echo ""
-    pip uninstall -y PyQt6 PyQt6-Qt6 PyQt6-sip 2>/dev/null
+# Prioritize .venv312 containing PySide6 (Python 3.12)
+if [ -f "$SCRIPT_DIR/.venv312/bin/python" ]; then
+    PYTHON_EXEC="$SCRIPT_DIR/.venv312/bin/python"
+    PLUGINS_DIR="$SCRIPT_DIR/.venv312/lib/python3.12/site-packages/PySide6/Qt/plugins"
+elif [ -f "$SCRIPT_DIR/.venv/bin/python" ]; then
+    PYTHON_EXEC="$SCRIPT_DIR/.venv/bin/python"
+    PLUGINS_DIR="$SCRIPT_DIR/.venv312/lib/python3.12/site-packages/PySide6/Qt/plugins"
+else
+    PYTHON_EXEC="python3"
+    PLUGINS_DIR="$SCRIPT_DIR/.venv312/lib/python3.12/site-packages/PySide6/Qt/plugins"
 fi
 
-export QT_API=pyqt6
-python main.py
+if [ -d "$PLUGINS_DIR/platforms" ]; then
+    export QT_PLUGIN_PATH="$PLUGINS_DIR"
+    export QT_QPA_PLATFORM_PLUGIN_PATH="$PLUGINS_DIR/platforms"
+fi
+
+export QT_API=pyside6
+exec "$PYTHON_EXEC" "$SCRIPT_DIR/main.py" "$@"

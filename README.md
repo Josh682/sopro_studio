@@ -300,6 +300,7 @@ New processors can be easily added to Sopro Studio by subclassing `BaseProcessor
 | `Out of memory` during separation | Lower Chunk Size in Settings (try `176400` or `88200`) |
 | App opens but pages are blank | Run `python main.py` from terminal and check the log output |
 | `PyQt6` import error | Activate your virtual environment: `source .venv/bin/activate` |
+| `Could not find Qt platform plugin "cocoa"` | Clear hidden flag on PySide6 dylibs via `chflags -R nohidden` or see [Qt Cocoa Troubleshooting Guide](docs/TROUBLESHOOTING_QT_COCOA.md) |
 | Qt platform plugin error on build | Ensure `brew install qt` is done and re-run `./build_mac.sh` |
 
 ---

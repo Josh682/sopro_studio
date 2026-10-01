@@ -1,7 +1,5 @@
+PySide6>=6.6.0
 qtpy>=2.4.0
-# PyQt6 is installed via Homebrew (brew install pyqt) — do NOT install via pip.
-# The Homebrew version is compiled specifically for your macOS version (Tahoe/arm64).
-# Running `pip install PyQt6` will install an incompatible version and break the app.
 torch>=2.0
 torchaudio>=2.0
 numpy>=1.26
