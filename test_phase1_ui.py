@@ -117,7 +117,7 @@ def test_launcher_card() -> None:
     )
     card.resize(340, 194)
 
-    assert card.height() == 194, f"Expected height 194, got {card.height()}"
+    assert card.height() == 216, f"Expected height 216, got {card.height()}"
     assert card.lbl_title.text() == "Audio Converter"
 
     # Test Drag & Drop signals

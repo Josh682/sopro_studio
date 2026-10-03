@@ -71,14 +71,20 @@ class AccentToken:
 @dataclass(frozen=True)
 class BackgroundColors:
     app: str = "#090B0E"
+    chassis: str = "#090B0E"
     surface_card: str = "#131720"
     surface_card_hover: str = "#181E2A"
     surface_rack: str = "#11141A"
     surface_well: str = "#0A0C10"
+    surface_display_glass: str = "#18130E"
 
     @property
     def app_qcolor(self) -> QColor:
         return hex_to_qcolor(self.app)
+
+    @property
+    def chassis_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.chassis)
 
     @property
     def surface_card_qcolor(self) -> QColor:
@@ -96,6 +102,10 @@ class BackgroundColors:
     def surface_well_qcolor(self) -> QColor:
         return hex_to_qcolor(self.surface_well)
 
+    @property
+    def surface_display_glass_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.surface_display_glass)
+
 
 @dataclass(frozen=True)
 class TextColors:
@@ -103,6 +113,7 @@ class TextColors:
     secondary: str = "#8E9AA8"
     muted: str = "#525D6B"
     button_dark: str = "#090B0E"
+    on_accent: str = "#0B0C10"
 
     @property
     def primary_qcolor(self) -> QColor:
@@ -120,14 +131,18 @@ class TextColors:
     def button_dark_qcolor(self) -> QColor:
         return hex_to_qcolor(self.button_dark)
 
+    @property
+    def on_accent_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.on_accent)
+
 
 @dataclass(frozen=True)
 class BorderColors:
     subtle: str = "rgba(255, 255, 255, 0.07)"
-    card: str = "rgba(255, 255, 255, 0.12)"
+    card: str = "rgba(255, 255, 255, 0.08)"
     card_hover: str = "rgba(255, 255, 255, 0.22)"
     highlight: str = "rgba(255, 255, 255, 0.18)"
-    focus: str = "#3B82F6"
+    focus: str = "#5B9BFA"
 
     @property
     def subtle_qcolor(self) -> QColor:
@@ -189,17 +204,19 @@ class WindowDimensions:
 @dataclass(frozen=True)
 class ShellDimensions:
     titlebar_height: int = 44
-    margin_x: int = 32
-    margin_y: int = 24
+    statusbar_height: int = 0
+    margin_x: int = 24
+    margin_y: int = 20
 
 
 @dataclass(frozen=True)
 class GridDimensions:
     columns: int = 3
     rows: int = 3
-    gap_x: int = 24
-    gap_y: int = 20
-    card_height: int = 194
+    gap_x: int = 16
+    gap_y: int = 16
+    card_width: int = 346
+    card_height: int = 216
 
 
 @dataclass(frozen=True)
@@ -212,7 +229,9 @@ class WorkspaceDimensions:
 
 @dataclass(frozen=True)
 class ButtonDimensions:
-    launcher_height: int = 38
+    height: int = 44
+    padding_x: int = 20
+    launcher_height: int = 44
     workspace_footer_height: int = 44
     bevel_depth: int = 4
     pressed_translation_y: int = 3
@@ -245,11 +264,16 @@ class RadiiTokens:
     sm: int = 4
     md: int = 8
     lg: int = 14
+    card: int = 4
+    button: int = 6
+    input: int = 8
+    pill: int = 999
     full: int = 9999
 
 
 @dataclass(frozen=True)
 class SpacingTokens:
+    space_0: int = 0
     space_1: int = 4
     space_2: int = 8
     space_3: int = 12
@@ -343,6 +367,14 @@ def _find_tokens_file(custom_path: Path | str | None = None) -> Optional[Path]:
     return None
 
 
+def _filter_dataclass_kwargs(cls: Any, data: Any) -> Dict[str, Any]:
+    """Filter dictionary to only contain fields defined on the dataclass."""
+    if not isinstance(data, dict):
+        return {}
+    valid_fields = getattr(cls, "__dataclass_fields__", {})
+    return {k: v for k, v in data.items() if k in valid_fields}
+
+
 def load_tokens(custom_path: Path | str | None = None) -> DesignTokens:
     """Load design tokens from tokens.json and return a typed DesignTokens instance."""
     token_path = _find_tokens_file(custom_path)
@@ -371,31 +403,31 @@ def load_tokens(custom_path: Path | str | None = None) -> DesignTokens:
             )
 
         color_tokens = ColorTokens(
-            background=BackgroundColors(**bg_data) if bg_data else BackgroundColors(),
-            text=TextColors(**text_data) if text_data else TextColors(),
-            border=BorderColors(**border_data) if border_data else BorderColors(),
+            background=BackgroundColors(**_filter_dataclass_kwargs(BackgroundColors, bg_data)) if bg_data else BackgroundColors(),
+            text=TextColors(**_filter_dataclass_kwargs(TextColors, text_data)) if text_data else TextColors(),
+            border=BorderColors(**_filter_dataclass_kwargs(BorderColors, border_data)) if border_data else BorderColors(),
             accents=accents,
-            semantic=SemanticColors(**sem_data) if sem_data else SemanticColors(),
+            semantic=SemanticColors(**_filter_dataclass_kwargs(SemanticColors, sem_data)) if sem_data else SemanticColors(),
         )
 
         dim_data = data.get("dimensions", {})
         dim_tokens = DimensionTokens(
-            window=WindowDimensions(**dim_data.get("window", {})),
-            shell=ShellDimensions(**dim_data.get("shell", {})),
-            grid=GridDimensions(**dim_data.get("grid", {})),
-            workspace=WorkspaceDimensions(**dim_data.get("workspace", {})),
-            button=ButtonDimensions(**dim_data.get("button", {})),
-            vu_meter=VUMeterDimensions(**dim_data.get("vu_meter", {})),
+            window=WindowDimensions(**_filter_dataclass_kwargs(WindowDimensions, dim_data.get("window", {}))),
+            shell=ShellDimensions(**_filter_dataclass_kwargs(ShellDimensions, dim_data.get("shell", {}))),
+            grid=GridDimensions(**_filter_dataclass_kwargs(GridDimensions, dim_data.get("grid", {}))),
+            workspace=WorkspaceDimensions(**_filter_dataclass_kwargs(WorkspaceDimensions, dim_data.get("workspace", {}))),
+            button=ButtonDimensions(**_filter_dataclass_kwargs(ButtonDimensions, dim_data.get("button", {}))),
+            vu_meter=VUMeterDimensions(**_filter_dataclass_kwargs(VUMeterDimensions, dim_data.get("vu_meter", {}))),
         )
 
-        radii_tokens = RadiiTokens(**data.get("radii", {}))
-        spacing_tokens = SpacingTokens(**data.get("spacing", {}))
+        radii_tokens = RadiiTokens(**_filter_dataclass_kwargs(RadiiTokens, data.get("radii", {})))
+        spacing_tokens = SpacingTokens(**_filter_dataclass_kwargs(SpacingTokens, data.get("spacing", {})))
 
         typo_data = data.get("typography", {})
         typo_items = {}
         for key in ["title_h1", "title_card", "body_regular", "body_small", "data_mono_lg", "data_mono_md", "data_mono_sm"]:
             if key in typo_data:
-                typo_items[key] = TypographyItem(**typo_data[key])
+                typo_items[key] = TypographyItem(**_filter_dataclass_kwargs(TypographyItem, typo_data[key]))
 
         typo_tokens = TypographyTokens(
             font_family_ui=typo_data.get("font_family_ui", "Inter"),
@@ -405,7 +437,7 @@ def load_tokens(custom_path: Path | str | None = None) -> DesignTokens:
 
         phys_data = data.get("physics", {})
         vu_phys = phys_data.get("vu_meter", {})
-        physics_tokens = PhysicsTokens(vu_meter=VUMeterPhysics(**vu_phys) if vu_phys else VUMeterPhysics())
+        physics_tokens = PhysicsTokens(vu_meter=VUMeterPhysics(**_filter_dataclass_kwargs(VUMeterPhysics, vu_phys)) if vu_phys else VUMeterPhysics())
 
         return DesignTokens(
             name=data.get("name", "Audio Quick Toolkit Design Tokens"),
