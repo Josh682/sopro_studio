@@ -9,7 +9,7 @@ from typing import Any, Callable
 import librosa
 import numpy as np
 
-from src.core.audio_engine import AudioEngine
+from src.core.audio_engine import AudioBuffer, AudioEngine
 from src.core.exporter import ExportEngine
 from src.core.processors.base_processor import (
     BaseProcessor,
@@ -51,9 +51,10 @@ class TempoChanger(BaseProcessor):
         tags=["tempo", "time-stretch", "bpm", "music"],
     )
 
-    def __init__(self) -> None:
-        self._audio_engine = AudioEngine()
-        self._export_engine = ExportEngine()
+    def __init__(self, ffmpeg_bin: str | None = None) -> None:
+        self._ffmpeg_bin = ffmpeg_bin
+        self._audio_engine = AudioEngine(ffmpeg_bin=ffmpeg_bin)
+        self._export_engine = ExportEngine(ffmpeg_bin=ffmpeg_bin)
 
     def process(
         self,
@@ -107,7 +108,7 @@ class TempoChanger(BaseProcessor):
 
             try:
                 local_progress(0.1, "Loading...")
-                audio_buffer = self._audio_engine.load(input_path)
+                audio_buffer = AudioBuffer.load(input_path, ffmpeg_bin=self._ffmpeg_bin)
                 
                 local_progress(0.4, f"Stretching by {rate:.3f}x...")
                 
@@ -143,10 +144,11 @@ class TempoChanger(BaseProcessor):
                 out_path = output_dir / out_name
 
                 # Export to WAV
-                self._export_engine.export_wav(
-                    buffer=audio_buffer,
+                audio_buffer.save(
                     path=out_path,
+                    format="wav",
                     bit_depth=24,  # High quality 24-bit PCM
+                    ffmpeg_bin=self._ffmpeg_bin,
                 )
                 
                 results[input_path] = out_path
@@ -158,15 +160,51 @@ class TempoChanger(BaseProcessor):
 
         return results
 
-    def get_parameters(self) -> list[ParameterDescriptor]:
+    @classmethod
+    def get_parameter_descriptors(cls) -> list[ParameterDescriptor]:
         return [
             ParameterDescriptor(
                 name="mode",
-                type=str,
+                type="choice",
                 default="bpm",
+                choices=["bpm", "percentage"],
                 description="Mode for tempo change (bpm or percentage)."
             ),
+            ParameterDescriptor(
+                name="source_bpm",
+                type="float",
+                default=120.0,
+                min_value=20.0,
+                max_value=300.0,
+                step=1.0,
+                unit="BPM",
+                description="Source tempo in BPM."
+            ),
+            ParameterDescriptor(
+                name="target_bpm",
+                type="float",
+                default=120.0,
+                min_value=20.0,
+                max_value=300.0,
+                step=1.0,
+                unit="BPM",
+                description="Target tempo in BPM."
+            ),
+            ParameterDescriptor(
+                name="percent_change",
+                type="float",
+                default=0.0,
+                min_value=-50.0,
+                max_value=100.0,
+                step=1.0,
+                unit="%",
+                description="Playback speed change percentage."
+            ),
         ]
+
+    def get_parameters(self) -> list[ParameterDescriptor]:
+        """Backward compatibility alias for get_parameter_descriptors."""
+        return self.get_parameter_descriptors()
 
 # Register the processor
 ProcessorRegistry.register(TempoChanger)

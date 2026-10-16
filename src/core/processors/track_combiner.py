@@ -74,7 +74,6 @@ class TrackCombiner(BaseProcessor):
             except Exception as exc:
                 log.warning("Could not probe '%s': %s", p.name, exc)
 
-        engine = AudioEngine()
         loaded_arrays = []
         
         # 2. Load, resample and upmix
@@ -84,7 +83,7 @@ class TrackCombiner(BaseProcessor):
             
             self.check_cancelled()
             
-            buffer = engine.load(p, target_sr=target_sr)
+            buffer = AudioBuffer.load(p, target_sr=target_sr)
             
             # Upmix to stereo if mono
             samples = buffer.samples
@@ -140,7 +139,6 @@ class TrackCombiner(BaseProcessor):
         self.check_cancelled()
         
         out_buffer = AudioBuffer(mixed, target_sr, channels=2)
-        exporter = ExportEngine(str(output_dir))
         
         # Find unique output path
         base_path = output_dir / f"{out_name}.{out_fmt}"
@@ -150,11 +148,12 @@ class TrackCombiner(BaseProcessor):
             unique_path = output_dir / f"{out_name}_{counter}.{out_fmt}"
             counter += 1
             
-        options_dict = {"bit_depth": bit_depth}
-        if out_fmt == "flac":
-            options_dict["compression"] = 5  # default
-            
-        out_path = exporter.export(out_buffer, out_fmt, unique_path.name, options_dict)
+        out_path = out_buffer.save(
+            path=unique_path,
+            format=out_fmt,
+            bit_depth=bit_depth,
+            compression=5,
+        )
         
         self.emit_progress(100.0, f"Mixdown complete: {out_path.name}")
         return {files[0]: out_path}

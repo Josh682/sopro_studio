@@ -14,6 +14,7 @@ from src.core.processors.denoise_processor import DenoiseProcessor
 from src.core.processors.dereverb_processor import DereverbProcessor
 from src.core.processors.voice_enhancement_processor import VoiceEnhancementProcessor
 from src.core.processors.restoration_processor import AudioRestorationProcessor
+from src.core.processors.audio_analyzer import AudioAnalyzer
 
 __all__ = [
     "FormatConverter",
@@ -30,4 +31,5 @@ __all__ = [
     "DereverbProcessor",
     "VoiceEnhancementProcessor",
     "AudioRestorationProcessor",
+    "AudioAnalyzer",
 ]

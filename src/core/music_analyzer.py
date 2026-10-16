@@ -8,7 +8,7 @@ from typing import Callable, Any
 import librosa
 import numpy as np
 
-from src.core.audio_engine import AudioEngine
+from src.core.audio_engine import AudioBuffer, AudioEngine
 
 log = logging.getLogger("sound_processor.core.music_analyzer")
 
@@ -52,8 +52,9 @@ class TempoResult:
 class MusicAnalyzer:
     """Analyzes audio for key and tempo."""
 
-    def __init__(self) -> None:
-        self._audio_engine = AudioEngine()
+    def __init__(self, ffmpeg_bin: str | None = None) -> None:
+        self._ffmpeg_bin = ffmpeg_bin
+        self._audio_engine = AudioEngine(ffmpeg_bin=ffmpeg_bin)
 
     def analyze(
         self,
@@ -74,13 +75,8 @@ class MusicAnalyzer:
 
         try:
             # We need a mono mixdown for accurate chromagram and tempo analysis
-            audio_buffer = self._audio_engine.load(input_path)
-            if audio_buffer.channels > 1:
-                # Downmix to mono
-                mono_audio = np.mean(audio_buffer.samples, axis=1)
-            else:
-                mono_audio = audio_buffer.samples
-            
+            audio_buffer = AudioBuffer.load(input_path, mono=True, ffmpeg_bin=self._ffmpeg_bin)
+            mono_audio = audio_buffer.samples
             sample_rate = audio_buffer.sample_rate
             
             if on_progress:

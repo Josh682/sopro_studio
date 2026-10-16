@@ -1,8 +1,9 @@
-"""Registry for discovering and instantiating processors."""
+from __future__ import annotations
 
-from typing import Type
+from typing import TYPE_CHECKING, Any, Type
 
-from src.core.processors.base_processor import BaseProcessor, ProcessorMetadata
+if TYPE_CHECKING:
+    from src.core.processors.base_processor import BaseProcessor, ProcessorMetadata
 
 class ProcessorRegistry:
     """Singleton registry for discovering and instantiating processors."""

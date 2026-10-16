@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from src.core.audio_engine import AudioEngine
+from src.core.audio_engine import AudioBuffer, AudioEngine
 from src.core.exporter import ExportEngine
 from src.core.processors.base_processor import (
     BaseProcessor,
@@ -29,11 +29,16 @@ class FormatConverter(BaseProcessor):
         tags=["conversion", "resample", "normalize"],
     )
 
-    def __init__(self, engine: AudioEngine | None = None, exporter: ExportEngine | None = None):
+    def __init__(
+        self,
+        engine: AudioEngine | None = None,
+        exporter: ExportEngine | None = None,
+        ffmpeg_bin: str | None = None,
+    ) -> None:
         app_config = AppConfig()
-        ffmpeg_bin = app_config.ffmpeg_path
-        self._engine = engine or AudioEngine(ffmpeg_bin=ffmpeg_bin)
-        self._exporter = exporter or ExportEngine(ffmpeg_bin=ffmpeg_bin)
+        self._ffmpeg_bin = ffmpeg_bin or app_config.ffmpeg_path
+        self._engine = engine or AudioEngine(ffmpeg_bin=self._ffmpeg_bin)
+        self._exporter = exporter or ExportEngine(ffmpeg_bin=self._ffmpeg_bin)
 
     @classmethod
     def get_parameter_descriptors(cls) -> list[ParameterDescriptor]:
@@ -76,37 +81,36 @@ class FormatConverter(BaseProcessor):
             out_path = unique_output_path(output_dir, path.stem, suffix)
 
             # Load
-            buffer = self._engine.load(path)
+            buffer = AudioBuffer.load(path, ffmpeg_bin=self._ffmpeg_bin)
             if cancel_flag and cancel_flag.is_set():
                 break
 
             # Resample
             target_sr_opt = options.get("sample_rate")
-            # If target_sr_opt is "Original" or None, we keep original. Assuming it's an int.
             if target_sr_opt and isinstance(target_sr_opt, int) and target_sr_opt != buffer.sample_rate:
                 local_progress(0.35, f"Resampling to {target_sr_opt} Hz...")
-                buffer = self._engine.resample(buffer, target_sr_opt)
+                buffer = buffer.resample(target_sr_opt)
             if cancel_flag and cancel_flag.is_set():
                 break
 
             # Normalize
             if options.get("normalize", False):
                 local_progress(0.55, "Normalising...")
-                buffer = self._engine.normalize(buffer)
+                buffer = buffer.normalize()
             if cancel_flag and cancel_flag.is_set():
                 break
 
             # Export
             local_progress(0.70, f"Encoding {out_fmt.upper()}...")
-            sr = buffer.sample_rate
-            if out_fmt == "wav":
-                self._exporter.export_wav(buffer, out_path, sample_rate=sr, bit_depth=options.get("bit_depth", 16))
-            elif out_fmt == "mp3":
-                self._exporter.export_mp3(buffer, out_path, sample_rate=sr, bitrate=options.get("mp3_bitrate", 192))
-            elif out_fmt == "flac":
-                self._exporter.export_flac(buffer, out_path, sample_rate=sr, compression=options.get("flac_compression", 5))
-            else:
-                raise ValueError(f"Unsupported format: {out_fmt}")
+            buffer.save(
+                out_path,
+                format=out_fmt,
+                sample_rate=buffer.sample_rate,
+                bit_depth=options.get("bit_depth", 16),
+                bitrate=options.get("mp3_bitrate", 192),
+                compression=options.get("flac_compression", 5),
+                ffmpeg_bin=self._ffmpeg_bin,
+            )
 
             results[path] = out_path
             local_progress(1.0, f"Done -> {out_path.name}")

@@ -9,6 +9,7 @@ from typing import Any, Callable
 import numpy as np
 import soundfile as sf
 
+from src.core.audio_engine import AudioBuffer
 from src.core.processors.base_processor import (
     BaseProcessor,
     ParameterDescriptor,
@@ -80,23 +81,37 @@ class AudioTrimmer(BaseProcessor):
         if on_progress:
             on_progress(0.1, "Analyzing file metadata...")
         
-        # 1. Get info to calculate frames
-        info = sf.info(str(input_path))
-        
-        # Validate bounds
+        # 1. Get info to calculate frames and duration
+        duration = 0.0
         try:
-            trim_opts.validate(info.duration)
-        except ValueError as ve:
-            raise RuntimeError(f"Validation failed for {input_path.name}: {ve}")
+            from src.audio.metadata import probe
+            info = probe(input_path)
+            duration = info.duration
+        except Exception:
+            try:
+                info = sf.info(str(input_path))
+                duration = info.duration
+            except Exception:
+                duration = 0.0
+
+        # Validate bounds
+        if duration > 0.0:
+            try:
+                trim_opts.validate(duration)
+            except ValueError as ve:
+                raise RuntimeError(f"Validation failed for {input_path.name}: {ve}")
         
-        start_frame = int(trim_opts.start_sec * info.samplerate)
-        frames_to_read = int((trim_opts.end_sec - trim_opts.start_sec) * info.samplerate)
-        
+        slice_duration = trim_opts.end_sec - trim_opts.start_sec if trim_opts.end_sec > trim_opts.start_sec else None
+
         if on_progress:
             on_progress(0.4, "Extracting audio slice...")
         
-        # 2. Read only the required slice (saves memory)
-        data, sr = sf.read(str(input_path), start=start_frame, frames=frames_to_read)
+        # 2. Sliced load via AudioBuffer (memory efficient)
+        buffer = AudioBuffer.load(
+            input_path,
+            start_sec=trim_opts.start_sec if trim_opts.start_sec > 0 else None,
+            duration_sec=slice_duration,
+        )
         
         if cancel_flag and cancel_flag.is_set():
             return None
@@ -105,11 +120,15 @@ class AudioTrimmer(BaseProcessor):
             on_progress(0.7, "Applying fades...")
         
         # 3. Apply Fades
+        data = buffer.samples
+        sr = buffer.sample_rate
         if trim_opts.fade_in_ms > 0:
             data = self._apply_fade_in(data, sr, trim_opts.fade_in_ms)
         if trim_opts.fade_out_ms > 0:
             data = self._apply_fade_out(data, sr, trim_opts.fade_out_ms)
             
+        buffer.samples = data
+
         if cancel_flag and cancel_flag.is_set():
             return None
             
@@ -120,8 +139,7 @@ class AudioTrimmer(BaseProcessor):
         out_path = output_dir / out_name
 
         # 4. Export
-        # We always output WAV as requested by the spec
-        sf.write(str(out_path), data, sr, format="WAV", subtype="PCM_24")
+        buffer.save(out_path, format="wav", bit_depth=24)
         
         log.info(f"Exported: {out_path.name}")
         return out_path
@@ -156,33 +174,52 @@ class AudioTrimmer(BaseProcessor):
         data[-fade_frames:] *= curve
         return data
 
-    def get_parameters(self) -> list[ParameterDescriptor]:
+    @classmethod
+    def get_parameter_descriptors(cls) -> list[ParameterDescriptor]:
         return [
             ParameterDescriptor(
                 name="start_sec",
-                type=float,
+                type="float",
                 default=0.0,
+                min_value=0.0,
+                step=0.1,
+                unit="s",
                 description="Trim start time in seconds."
             ),
             ParameterDescriptor(
                 name="end_sec",
-                type=float,
+                type="float",
                 default=0.0,
-                description="Trim end time in seconds."
+                min_value=0.0,
+                step=0.1,
+                unit="s",
+                description="Trim end time in seconds (0 = full length)."
             ),
             ParameterDescriptor(
                 name="fade_in_ms",
-                type=float,
+                type="float",
                 default=0.0,
+                min_value=0.0,
+                max_value=10000.0,
+                step=50.0,
+                unit="ms",
                 description="Fade in duration in milliseconds."
             ),
             ParameterDescriptor(
                 name="fade_out_ms",
-                type=float,
+                type="float",
                 default=0.0,
+                min_value=0.0,
+                max_value=10000.0,
+                step=50.0,
+                unit="ms",
                 description="Fade out duration in milliseconds."
             ),
         ]
+
+    def get_parameters(self) -> list[ParameterDescriptor]:
+        """Backward compatibility alias for get_parameter_descriptors."""
+        return self.get_parameter_descriptors()
 
 # Register the processor
 ProcessorRegistry.register(AudioTrimmer)

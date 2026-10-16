@@ -8,7 +8,7 @@ from typing import Any, Callable
 import librosa
 import numpy as np
 
-from src.core.audio_engine import AudioEngine
+from src.core.audio_engine import AudioBuffer, AudioEngine
 from src.core.exporter import ExportEngine
 from src.core.processors.base_processor import (
     BaseProcessor,
@@ -32,9 +32,10 @@ class PitchShifter(BaseProcessor):
         tags=["pitch", "transpose", "shift", "music"],
     )
 
-    def __init__(self) -> None:
-        self._audio_engine = AudioEngine()
-        self._export_engine = ExportEngine()
+    def __init__(self, ffmpeg_bin: str | None = None) -> None:
+        self._ffmpeg_bin = ffmpeg_bin
+        self._audio_engine = AudioEngine(ffmpeg_bin=ffmpeg_bin)
+        self._export_engine = ExportEngine(ffmpeg_bin=ffmpeg_bin)
 
     def process(
         self,
@@ -76,7 +77,7 @@ class PitchShifter(BaseProcessor):
 
             try:
                 local_progress(0.1, "Loading...")
-                audio_buffer = self._audio_engine.load(input_path)
+                audio_buffer = AudioBuffer.load(input_path, ffmpeg_bin=self._ffmpeg_bin)
                 
                 local_progress(0.4, f"Shifting by {semitones} semitones...")
                 
@@ -112,10 +113,11 @@ class PitchShifter(BaseProcessor):
                 out_path = output_dir / out_name
 
                 local_progress(0.9, "Exporting...")
-                self._export_engine.export_wav(
-                    buffer=audio_buffer,
+                audio_buffer.save(
                     path=out_path,
+                    format="wav",
                     bit_depth=24,
+                    ffmpeg_bin=self._ffmpeg_bin,
                 )
                 
                 results[input_path] = out_path
