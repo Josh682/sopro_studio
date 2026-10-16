@@ -24,6 +24,8 @@ def load_audio(
     path: Path,
     sample_rate: int | None = None,
     mono: bool = False,
+    start_sec: float | None = None,
+    duration_sec: float | None = None,
     ffmpeg_bin: str = "ffmpeg",
 ) -> tuple[np.ndarray, int]:
     """Decode *path* to a float32 numpy array via FFmpeg.
@@ -33,13 +35,15 @@ def load_audio(
     are normalised to the range ``[-1.0, 1.0]``.
 
     Args:
-        path:        Path to the audio file.
-        sample_rate: Target sample rate in Hz.  If *None* the file's native
-                     rate is preserved.  FFmpeg performs high-quality
-                     resampling internally when a rate is specified.
-        mono:        If *True*, down-mix all channels to mono before
-                     returning.
-        ffmpeg_bin:  Path or name of the ``ffmpeg`` binary.
+        path:         Path to the audio file.
+        sample_rate:  Target sample rate in Hz.  If *None* the file's native
+                      rate is preserved.  FFmpeg performs high-quality
+                      resampling internally when a rate is specified.
+        mono:         If *True*, down-mix all channels to mono before
+                      returning.
+        start_sec:    Start offset in seconds for fast seeking.
+        duration_sec: Duration in seconds to decode from start.
+        ffmpeg_bin:   Path or name of the ``ffmpeg`` binary.
 
     Returns:
         ``(samples_array, actual_sample_rate)`` tuple.
@@ -55,7 +59,14 @@ def load_audio(
     native_sr, native_channels = _probe_stream_info(path, ffmpeg_bin)
     target_sr = sample_rate if sample_rate is not None else native_sr
 
-    cmd = _build_decode_command(path, target_sr, mono, ffmpeg_bin)
+    cmd = _build_decode_command(
+        path,
+        target_sr,
+        mono,
+        ffmpeg_bin,
+        start_sec=start_sec,
+        duration_sec=duration_sec,
+    )
     log.debug("FFmpeg decode command: %s", " ".join(cmd))
 
     try:
@@ -107,12 +118,17 @@ def _build_decode_command(
     target_sr: int,
     mono: bool,
     ffmpeg_bin: str,
+    start_sec: float | None = None,
+    duration_sec: float | None = None,
 ) -> list[str]:
     """Build the FFmpeg command that writes raw float32 PCM to stdout."""
-    cmd = [
-        ffmpeg_bin,
-        "-y",                       # overwrite (no-op for stdout)
-        "-i", str(path),
+    cmd = [ffmpeg_bin, "-y"]
+    if start_sec is not None and start_sec > 0:
+        cmd += ["-ss", str(start_sec)]
+    cmd += ["-i", str(path)]
+    if duration_sec is not None and duration_sec > 0:
+        cmd += ["-t", str(duration_sec)]
+    cmd += [
         "-f", "f32le",              # raw little-endian float32
         "-acodec", "pcm_f32le",
         "-ar", str(target_sr),
