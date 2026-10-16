@@ -36,7 +36,7 @@ from src.ui.widgets.tactile_button import TactileButton
 
 def test_token_bridge() -> None:
     print("--- 1. Testing Token Bridge ---")
-    assert TOKENS.name == "Audio Quick Toolkit Design Tokens", f"Unexpected name: {TOKENS.name}"
+    assert TOKENS.name == "Umbra Design Tokens", f"Unexpected name: {TOKENS.name}"
     assert len(TOKENS.colors.accents) == 9, f"Expected 9 accents, got {len(TOKENS.colors.accents)}"
 
     # Test exact accent values from tokens.json
@@ -169,8 +169,8 @@ def test_main_window_navigation() -> None:
     # 2. Test Navigation to Module
     win.navigate_to_module("pitch")
     assert win.stack.currentIndex() == 1, f"Expected index 1 after navigation, got {win.stack.currentIndex()}"
-    assert "[MOD-05]  PITCH SHIFTER" in win.page_workspace.lbl_module_header.text()
-    assert win.page_workspace.btn_action_cta.text() == "Shift Pitch"
+    assert "[MOD-05]  PITCH & TIME LAB" in win.page_workspace.lbl_module_header.text()
+    assert win.page_workspace.btn_action_cta.text() == "Process Audio"
 
     # 3. Test Global Esc Shortcut
     esc_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
@@ -180,9 +180,9 @@ def test_main_window_navigation() -> None:
     # 4. Test Navigation with File Drop
     win.navigate_to_module_with_file("normalize", "/music/track_01.flac")
     assert win.stack.currentIndex() == 1
-    assert "[MOD-08]  LOUDNESS NORMALIZE" in win.page_workspace.lbl_module_header.text()
+    assert "[MOD-08]  NOISE & ROOM REPAIR" in win.page_workspace.lbl_module_header.text()
     assert "track_01.flac" in win.page_workspace.lbl_file_pill.text()
-    assert win.page_workspace.btn_action_cta.text() == "Normalize Loudness"
+    assert win.page_workspace.btn_action_cta.text() == "Clean Audio"
 
     # Esc back to launcher
     win.keyPressEvent(esc_event)

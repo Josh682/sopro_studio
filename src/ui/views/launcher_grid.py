@@ -1,9 +1,10 @@
-"""LauncherGridPage - 3x3 Dark Modern Bento Grid for Module Launchers.
+"""LauncherGridPage - 3x3 Analog Console Hardware Grid for Module Launchers.
 
-Implements:
-- 3x3 layout with 24px horizontal and 20px vertical gap.
-- 9 modules with exact tags, titles, descriptions, and accent bindings.
-- Navigation triggers via button click or file drag-and-drop.
+Implements DESIGN.md Section 5.1 & Section 7.1:
+- 3x3 layout with 16px horizontal and 16px vertical gap.
+- Margins: 24px horizontal, 20px vertical.
+- 9 modules on modular bronze hardware cards (346x216px).
+- Navigation triggers via amber backlit button click, manual browse button, or file drag-and-drop.
 - Zero scrollbars at standard 1152x768 resolution.
 """
 
@@ -12,28 +13,33 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from src.ui.qt import (
+    QDragEnterEvent,
+    QDragLeaveEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QEvent,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
     Qt,
+    QTimer,
     QVBoxLayout,
     QWidget,
     Signal,
 )
 
 from src.ui.theme.tokens import TOKENS
-from src.ui.widgets.launcher_card import LauncherCard
+from src.ui.widgets.launcher_card import LauncherCard, audio_file_from_mime
 
-# Specification for all 9 modules from DESIGN.md and prompt
+# Specification for all 9 modules from DESIGN.md Section 7.1 & 7.2
 MODULE_DEFINITIONS: List[Dict[str, str]] = [
     {
         "id": "converter",
         "code": "[MOD-01]",
         "tag": "[CONV]",
         "title": "Audio Converter",
-        "description": "Convert between WAV, MP3, FLAC and AIFF.",
         "button_text": "Open Converter",
         "action_text": "Convert Files",
         "accent_key": "converter",
@@ -43,7 +49,6 @@ MODULE_DEFINITIONS: List[Dict[str, str]] = [
         "code": "[MOD-02]",
         "tag": "[STEM]",
         "title": "AI Stem Separator",
-        "description": "Extract clean vocals and instrumentals from any audio file.",
         "button_text": "Open Separator",
         "action_text": "Separate Stems",
         "accent_key": "separator",
@@ -53,76 +58,69 @@ MODULE_DEFINITIONS: List[Dict[str, str]] = [
         "code": "[MOD-03]",
         "tag": "[MERG]",
         "title": "Track Combiner",
-        "description": "Merge stems and tracks into a single audio file.",
         "button_text": "Open Combiner",
         "action_text": "Merge Tracks",
         "accent_key": "combiner",
     },
     {
-        "id": "detect",
+        "id": "analyze",
         "code": "[MOD-04]",
         "tag": "[DETC]",
-        "title": "Key & Tempo Detect",
-        "description": "Find the musical key and BPM of any track.",
-        "button_text": "Open Detector",
-        "action_text": "Export Key & Tempo",
+        "title": "Music Analyzer",
+        "button_text": "Open Analyzer",
+        "action_text": "Analyze Audio",
         "accent_key": "detect",
     },
     {
-        "id": "pitch",
+        "id": "pitch_time",
         "code": "[MOD-05]",
         "tag": "[PTCH]",
-        "title": "Pitch Shifter",
-        "description": "Transpose audio up or down in semitones.",
-        "button_text": "Open Shifter",
-        "action_text": "Shift Pitch",
+        "title": "Pitch & Time Lab",
+        "button_text": "Open Lab",
+        "action_text": "Process Audio",
         "accent_key": "pitch",
     },
     {
-        "id": "tempo",
+        "id": "edit",
         "code": "[MOD-06]",
-        "tag": "[TMP]",
-        "title": "Tempo Change",
-        "description": "Speed up or slow down audio without altering pitch.",
-        "button_text": "Open Tempo",
-        "action_text": "Apply Tempo Change",
-        "accent_key": "tempo",
-    },
-    {
-        "id": "trim",
-        "code": "[MOD-07]",
-        "tag": "[TRIM]",
-        "title": "Audio Trim",
-        "description": "Cut and trim audio with millisecond precision.",
-        "button_text": "Open Trimmer",
-        "action_text": "Trim Audio",
+        "tag": "[EDIT]",
+        "title": "Audio Editor",
+        "button_text": "Open Editor",
+        "action_text": "Trim & Normalize",
         "accent_key": "trim",
     },
     {
-        "id": "normalize",
+        "id": "repair",
+        "code": "[MOD-07]",
+        "tag": "[REPR]",
+        "title": "Clip & Click Repair",
+        "button_text": "Open Repair",
+        "action_text": "Repair Audio",
+        "accent_key": "tempo",
+    },
+    {
+        "id": "clean",
         "code": "[MOD-08]",
-        "tag": "[NORM]",
-        "title": "Loudness Normalize",
-        "description": "Standardize volume to LUFS streaming presets.",
-        "button_text": "Open Normalizer",
-        "action_text": "Normalize Loudness",
+        "tag": "[DENR]",
+        "title": "Noise & Room Repair",
+        "button_text": "Open Cleaner",
+        "action_text": "Clean Audio",
         "accent_key": "normalize",
     },
     {
-        "id": "info",
+        "id": "voice",
         "code": "[MOD-09]",
-        "tag": "[INFO]",
-        "title": "Audio Information",
-        "description": "Inspect detailed audio metadata and properties.",
-        "button_text": "Open Inspector",
-        "action_text": "Copy Metadata",
+        "tag": "[VOIC]",
+        "title": "Voice & Polish Lab",
+        "button_text": "Open Voice Lab",
+        "action_text": "Enhance Voice",
         "accent_key": "info",
     },
 ]
 
 
 class LauncherGridPage(QWidget):
-    """Main dashboard page rendering the 3x3 Bento Grid of audio modules."""
+    """Console viewport page rendering the 3x3 modular hardware grid."""
 
     # Navigation signals
     module_requested = Signal(str)  # module_id
@@ -131,22 +129,27 @@ class LauncherGridPage(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
 
+        self.setAcceptDrops(True)
         self._cards: Dict[str, LauncherCard] = {}
+        self._disarm_timer = QTimer(self)
+        self._disarm_timer.setSingleShot(True)
+        self._disarm_timer.setInterval(80)
+        self._disarm_timer.timeout.connect(lambda: self._set_armed(False))
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Initialize the grid layout and populate 9 cards."""
-        # Top-level container layout
+        """Initialize the grid layout and populate 9 modular cards."""
+        # Top-level container layout matching DESIGN.md Section 5.2 margins
         main_layout = QVBoxLayout(self)
-        margin_x = TOKENS.dimensions.shell.margin_x  # 32px
-        margin_y = TOKENS.dimensions.shell.margin_y  # 24px
+        margin_x = TOKENS.dimensions.shell.margin_x  # 24px
+        margin_y = TOKENS.dimensions.shell.margin_y  # 20px
         main_layout.setContentsMargins(margin_x, margin_y, margin_x, margin_y)
         main_layout.setSpacing(0)
 
-        # 3x3 Bento Grid layout
+        # 3x3 Modular Grid layout
         grid_layout = QGridLayout()
-        grid_layout.setHorizontalSpacing(TOKENS.dimensions.grid.gap_x)  # 24px
-        grid_layout.setVerticalSpacing(TOKENS.dimensions.grid.gap_y)  # 20px
+        grid_layout.setHorizontalSpacing(TOKENS.dimensions.grid.gap_x)  # 16px
+        grid_layout.setVerticalSpacing(TOKENS.dimensions.grid.gap_y)  # 16px
         grid_layout.setContentsMargins(0, 0, 0, 0)
 
         for i, mod in enumerate(MODULE_DEFINITIONS):
@@ -158,20 +161,67 @@ class LauncherGridPage(QWidget):
                 code=mod["code"],
                 tag=mod["tag"],
                 title=mod["title"],
-                description=mod["description"],
                 button_text=mod["button_text"],
                 accent_key=mod["accent_key"],
                 parent=self,
             )
 
-            # Connect signals
+            # Connect signals and event filter for global drag state coordination
             card.open_requested.connect(self._on_card_opened)
             card.file_dropped.connect(self._on_card_file_dropped)
+            card.installEventFilter(self)
 
             self._cards[mod["id"]] = card
             grid_layout.addWidget(card, row, col)
 
         main_layout.addLayout(grid_layout)
+
+    def _set_armed(self, armed: bool) -> None:
+        """Propagate armed stand-by state to all 9 module cards."""
+        for card in self._cards.values():
+            card.set_armed(armed)
+
+    def _on_drag_enter(self, event) -> None:
+        if audio_file_from_mime(event.mimeData()):
+            self._disarm_timer.stop()
+            self._set_armed(True)
+
+    def eventFilter(self, obj, event) -> bool:
+        """Monitor drag events over cards to control global arming without consuming events."""
+        event_type = event.type()
+        if event_type == QEvent.Type.DragEnter:
+            self._on_drag_enter(event)
+        elif event_type == QEvent.Type.DragLeave:
+            self._disarm_timer.start()
+        elif event_type == QEvent.Type.Drop:
+            self._disarm_timer.stop()
+            self._set_armed(False)
+        return False
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        """Handle drag entering the grid container area between cards."""
+        if audio_file_from_mime(event.mimeData()):
+            self._disarm_timer.stop()
+            self._set_armed(True)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        if audio_file_from_mime(event.mimeData()):
+            self._disarm_timer.stop()
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
+        self._disarm_timer.start()
+        event.accept()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        self._disarm_timer.stop()
+        self._set_armed(False)
+        event.ignore()
 
     def _on_card_opened(self, module_id: str) -> None:
         self.module_requested.emit(module_id)

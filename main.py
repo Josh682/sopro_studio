@@ -1,4 +1,4 @@
-"""Audio Quick Toolkit v2.0 — Application Entry Point.
+"""Umbra v2.0 — Application Entry Point.
 
 Architected according to DESIGN.md Non-Negotiables:
 - Single Source of Truth: tokens.json
@@ -28,6 +28,7 @@ except ModuleNotFoundError:
     # If neither PySide6 nor PyQt6 is in current interpreter, auto-switch to .venv312
     project_root = Path(__file__).parent.absolute()
     candidate_venvs = [
+        project_root / ".venv312.nosync" / "bin" / "python",
         project_root / ".venv312" / "bin" / "python",
         project_root / ".venv" / "bin" / "python",
     ]
@@ -80,13 +81,13 @@ def configure_application_palette(app: QApplication) -> None:
 
 
 def main() -> int:
-    """Initialize and run the Audio Quick Toolkit desktop application."""
+    """Initialize and run the Umbra desktop application."""
     # Ensure High DPI scaling is handled smoothly
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
 
-    app.setApplicationName("Audio Quick Toolkit")
+    app.setApplicationName("Umbra")
     app.setApplicationVersion("2.0.0")
     app.setOrganizationName("Sopro Studio")
 
@@ -97,7 +98,7 @@ def main() -> int:
     project_root = Path(__file__).resolve().parent
     log_dir = project_root / "logs"
     setup_logger(name="sound_processor", log_dir=log_dir, level=logging.DEBUG)
-    log.info("Application starting (Audio Quick Toolkit v2.0)...")
+    log.info("Application starting (Umbra v2.0)...")
 
     # Launch Primary Shell Window (Default 1152 x 768 px)
     window = MainWindow()

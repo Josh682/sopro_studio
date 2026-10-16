@@ -5,8 +5,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Prioritize .venv312 (Python 3.12 with PySide6 6.8.3)
-if [ -f "$SCRIPT_DIR/.venv312/bin/python" ]; then
+# Prefer .venv312.nosync: the project lives in iCloud-synced ~/Documents and
+# iCloud "Optimize Mac Storage" evicts venv files, so every import blocks on a
+# network download. Folders ending in .nosync are never synced or evicted.
+if [ -f "$SCRIPT_DIR/.venv312.nosync/bin/python" ]; then
+    PYTHON_EXEC="$SCRIPT_DIR/.venv312.nosync/bin/python"
+    PLUGINS_DIR="$SCRIPT_DIR/.venv312.nosync/lib/python3.12/site-packages/PySide6/Qt/plugins"
+elif [ -f "$SCRIPT_DIR/.venv312/bin/python" ]; then
     PYTHON_EXEC="$SCRIPT_DIR/.venv312/bin/python"
     PLUGINS_DIR="$SCRIPT_DIR/.venv312/lib/python3.12/site-packages/PySide6/Qt/plugins"
 elif [ -f "$SCRIPT_DIR/.venv/bin/python" ]; then

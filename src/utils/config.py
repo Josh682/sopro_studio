@@ -1,8 +1,15 @@
 """QSettings-backed persistent configuration."""
 
 from pathlib import Path
+from typing import Any
 
-from qtpy.QtCore import QSettings
+try:
+    from src.ui.qt import QSettings
+except Exception:
+    try:
+        from PySide6.QtCore import QSettings
+    except Exception:
+        from qtpy.QtCore import QSettings
 
 from src.utils.paths import outputs_dir, models_dir, resource_path
 
@@ -34,13 +41,18 @@ class AppConfig:
 
     @property
     def ffmpeg_path(self) -> str:
-        # Check bundled ffmpeg first
+        # Check system ffmpeg first (avoids macOS Gatekeeper quarantine delays on bundled binary)
+        import shutil
+        val = self._settings.value("ffmpeg_path", None)
+        system_bin = shutil.which("ffmpeg")
+        if val and "assets/bin/ffmpeg" not in str(val) and Path(str(val)).exists():
+            return str(val)
+        if system_bin:
+            return system_bin
         bundled = resource_path("assets/bin/ffmpeg")
         if bundled.exists():
-            default = str(bundled)
-        else:
-            default = "ffmpeg"
-        return self._settings.value("ffmpeg_path", default)
+            return str(bundled)
+        return "ffmpeg"
 
     @ffmpeg_path.setter
     def ffmpeg_path(self, path: str) -> None:
@@ -101,3 +113,11 @@ class AppConfig:
     @last_used_bs_checkpoint.setter
     def last_used_bs_checkpoint(self, checkpoint_id: str) -> None:
         self._settings.setValue("last_used_bs_checkpoint", checkpoint_id)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Generic config getter fallback."""
+        return self._settings.value(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        """Generic config setter fallback."""
+        self._settings.setValue(key, value)

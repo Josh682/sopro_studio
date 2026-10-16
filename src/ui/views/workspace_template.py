@@ -10,6 +10,7 @@ Implements DESIGN.md Section 7.1 Contract:
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -29,14 +30,66 @@ from src.ui.qt import (
     QPushButton,
     QSizePolicy,
     QSpacerItem,
+    QStackedWidget,
     Qt,
     QVBoxLayout,
     QWidget,
     Signal,
 )
 
+import src.core.processors  # Ensure all processors are registered
+from src.core.processors.base_processor import ParameterDescriptor
+from src.core.processor_registry import ProcessorRegistry
+from src.ui.components.custom_stages import (
+    AnalysisStage,
+    StemDeckStage,
+    WaveformStage,
+    create_custom_stage,
+)
+from src.core.task_runner import (
+    AudioTask,
+    AudioTaskRunner,
+    TaskResult,
+    get_task_runner,
+)
+from src.ui.components.rack_control_factory import DynamicRackController
 from src.ui.theme.tokens import TOKENS, AccentToken
 from src.ui.widgets.tactile_button import TactileButton
+from src.utils.config import AppConfig
+from src.workers.processor_worker import ProcessorWorker
+
+log = logging.getLogger("sound_processor.ui.views.workspace_template")
+
+MODULE_TO_PROCESSOR_ID = {
+    # 9 Consolidated Modules (Option C)
+    "converter": "format_converter",
+    "separator": "stem_separator",
+    "combiner": "track_combiner",
+    "analyze": "key_detector",
+    "pitch_time": "pitch_shifter",
+    "edit": "audio_trimmer",
+    "repair": "declip",
+    "clean": "denoise",
+    "voice": "voice_enhancement",
+    # Backward-compatible legacy aliases
+    "detect": "key_detector",
+    "key_detector": "key_detector",
+    "pitch": "pitch_shifter",
+    "tempo": "tempo_changer",
+    "trim": "audio_trimmer",
+    "trimmer": "audio_trimmer",
+    "normalize": "loudness_normalizer",
+    "loudness": "loudness_normalizer",
+    "info": "audio_analyzer",
+    "metadata": "audio_analyzer",
+    "metadata_editor": "audio_analyzer",
+    "audio_analyzer": "audio_analyzer",
+    "declip": "declip",
+    "denoise": "denoise",
+    "dereverb": "dereverb",
+    "voice_enhancement": "voice_enhancement",
+    "restoration": "restoration",
+}
 
 # Supported audio extensions for file picker and drag-and-drop
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".aiff", ".aif", ".m4a", ".aac", ".opus", ".wma"}
@@ -164,13 +217,13 @@ class InteractiveDeck(QFrame):
         """Update border and background styling based on hover and drag states."""
         if self._drag_active:
             border = f"2px dashed {self._accent_color}"
-            bg = "#121A28"
+            bg = "#1F1710"
         elif self._is_hovered:
             border = f"1px dashed {self._accent_color}"
-            bg = "#0B0E15"
+            bg = "#17120D"
         else:
             border = f"1px dashed {TOKENS.colors.border.subtle}"
-            bg = "#050608"
+            bg = "#120E0B"
 
         self.setStyleSheet(
             f"InteractiveDeck {{"
@@ -254,6 +307,14 @@ class WorkspacePage(QWidget):
         self._current_module_info: Dict[str, Any] = {}
         self._current_file: Optional[str] = None
         self._current_files: List[str] = []
+
+        self._rack_controller = DynamicRackController()
+        self._task_runner = get_task_runner()
+        self._current_task: Optional[AudioTask] = None
+        self._worker: Optional[ProcessorWorker] = None  # Backward-compat alias
+        self._custom_stage_widget: Optional[QWidget] = None
+        self._submode: Optional[str] = None
+        self._active_processor_id: Optional[str] = None
 
         self._setup_ui()
 
@@ -356,12 +417,16 @@ class WorkspacePage(QWidget):
         deck_header.addWidget(self.lbl_deck_badge)
         deck_layout.addLayout(deck_header)
 
-        # Interactive Deck Target (Click anywhere to browse or drag & drop)
-        self.interactive_deck = InteractiveDeck(self.slot2_deck)
+        # Interactive Deck Target & Custom Stages via QStackedWidget
+        self.deck_stack = QStackedWidget(self.slot2_deck)
+        self.deck_stack.setStyleSheet("background: transparent; border: none;")
+
+        self.interactive_deck = InteractiveDeck(self.deck_stack)
         self.interactive_deck.browse_requested.connect(self.open_file_dialog)
         self.interactive_deck.file_dropped.connect(self.load_file)
-        deck_layout.addWidget(self.interactive_deck)
+        self.deck_stack.addWidget(self.interactive_deck)
 
+        deck_layout.addWidget(self.deck_stack)
         main_layout.addWidget(self.slot2_deck)
 
         # =========================================================================
@@ -381,15 +446,15 @@ class WorkspacePage(QWidget):
         rack_layout.setSpacing(14)
 
         # Cluster A: Primary Controls
-        self.cluster_a = self._create_cluster_panel("CLUSTER A : PRIMARY PARAMETERS")
+        self.cluster_a, self.cluster_a_layout, self.cluster_a_header = self._create_cluster_panel("CLUSTER A : PRIMARY PARAMETERS")
         rack_layout.addWidget(self.cluster_a, 4)
 
         # Cluster B: Secondary Controls
-        self.cluster_b = self._create_cluster_panel("CLUSTER B : ENGINE FILTERS")
+        self.cluster_b, self.cluster_b_layout, self.cluster_b_header = self._create_cluster_panel("CLUSTER B : ENGINE FILTERS")
         rack_layout.addWidget(self.cluster_b, 4)
 
         # Cluster C: Presets & Targets
-        self.cluster_c = self._create_cluster_panel("CLUSTER C : PRESETS")
+        self.cluster_c, self.cluster_c_layout, self.cluster_c_header = self._create_cluster_panel("CLUSTER C : PRESETS")
         rack_layout.addWidget(self.cluster_c, 3)
 
         main_layout.addWidget(self.slot3_rack)
@@ -485,16 +550,17 @@ class WorkspacePage(QWidget):
             parent=self.slot4_footer,
         )
         self.btn_action_cta.setMinimumWidth(180)
+        self.btn_action_cta.clicked.connect(self.execute_action)
         footer_layout.addWidget(self.btn_action_cta)
 
         main_layout.addWidget(self.slot4_footer)
 
-    def _create_cluster_panel(self, cluster_title: str) -> QFrame:
+    def _create_cluster_panel(self, cluster_title: str) -> tuple[QFrame, QVBoxLayout, QLabel]:
         """Helper to create an analog hardware rack cluster panel."""
         panel = QFrame(self.slot3_rack)
         panel.setStyleSheet(
             f"QFrame {{"
-            f"  background-color: #0D1017;"
+            f"  background-color: #17100B;"
             f"  border: 1px solid rgba(255, 255, 255, 0.05);"
             f"  border-radius: 6px;"
             f"}}"
@@ -511,15 +577,11 @@ class WorkspacePage(QWidget):
         body = QFrame(panel)
         body.setStyleSheet("border: none; background: transparent;")
         body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        msg = QLabel("Hardware parameters connected to audio DSP pipe.", body)
-        msg.setFont(TOKENS.typography.create_font("body_small"))
-        msg.setStyleSheet(f"color: {TOKENS.colors.text.muted}; border: none; background: transparent;")
-        body_layout.addWidget(msg)
-
         layout.addWidget(body)
-        return panel
+        return panel, body_layout, header
 
     # --- Manual File Picker & Buffer Management ---
 
@@ -544,6 +606,12 @@ class WorkspacePage(QWidget):
         self._current_file = file_path
         self._current_files = [file_path]
         self._update_file_display()
+
+        if self._custom_stage_widget is not None:
+            if isinstance(self._custom_stage_widget, WaveformStage):
+                self._custom_stage_widget.load_audio_preview(file_path)
+            self.deck_stack.setCurrentIndex(1)
+
         self.file_selected.emit(self._current_module_id, file_path)
 
     def load_files(self, file_paths: List[str]) -> None:
@@ -553,14 +621,26 @@ class WorkspacePage(QWidget):
         self._current_files = list(file_paths)
         self._current_file = file_paths[0]
         self._update_file_display()
+
+        if self._custom_stage_widget is not None:
+            if isinstance(self._custom_stage_widget, WaveformStage):
+                self._custom_stage_widget.load_audio_preview(self._current_file)
+            self.deck_stack.setCurrentIndex(1)
+
         self.files_selected.emit(self._current_module_id, self._current_files)
         self.file_selected.emit(self._current_module_id, self._current_file)
 
     def reset_file_and_params(self) -> None:
         """Reset loaded audio file and restore defaults."""
+        if self._current_task is not None and self._current_task.is_running:
+            self._current_task.cancel()
+        if self._worker is not None and hasattr(self._worker, "cancel"):
+            self._worker.cancel()
         self._current_file = None
         self._current_files.clear()
+        self._rack_controller.reset_to_defaults()
         self._update_file_display()
+        self.deck_stack.setCurrentIndex(0)
 
     def _update_file_display(self) -> None:
         """Refresh deck and footer displays with the active buffer state."""
@@ -619,12 +699,180 @@ class WorkspacePage(QWidget):
                 f"color: {accent.base}; background: transparent; border: none;"
             )
 
+    # --- Dynamic Rack & Custom Stages ---
+
+    def _get_module_descriptors(self) -> List[ParameterDescriptor]:
+        """Return parameter descriptors dynamically tailored to the module or submode."""
+        mod = self._current_module_id
+        if mod == "analyze":
+            return [
+                ParameterDescriptor(name="detect_key", label="Detect Musical Key", type="bool", default=True, tooltip="Analyze musical key and Camelot harmonic scale."),
+                ParameterDescriptor(name="detect_bpm", label="Detect Tempo (BPM)", type="bool", default=True, tooltip="Analyze beats per minute and rhythm grid."),
+                ParameterDescriptor(name="calc_lufs", label="Measure EBU R128 LUFS", type="bool", default=True, tooltip="Calculate integrated LUFS and loudness range."),
+                ParameterDescriptor(name="calc_peaks", label="Calculate True Peak", type="bool", default=True, tooltip="Calculate maximum sample and true peak decibels."),
+            ]
+        elif mod in ("pitch_time", "pitch", "tempo"):
+            if not self._submode:
+                self._submode = "tempo" if mod == "tempo" else "pitch"
+            mode_desc = ParameterDescriptor(
+                name="lab_mode",
+                label="Lab Engine",
+                type="choice",
+                choices=["Pitch Shift", "Tempo Stretch"],
+                default="Pitch Shift" if self._submode == "pitch" else "Tempo Stretch",
+                tooltip="Toggle between Pitch Shifting and Tempo Stretching engines.",
+            )
+            proc = "pitch_shifter" if self._submode == "pitch" else "tempo_changer"
+            cls = ProcessorRegistry.get_processor_class(proc)
+            return [mode_desc] + (cls.get_parameter_descriptors() if cls else [])
+        elif mod in ("edit", "trim", "trimmer"):
+            cls = ProcessorRegistry.get_processor_class("audio_trimmer")
+            base_descs = cls.get_parameter_descriptors() if cls else []
+            norm_desc = ParameterDescriptor(
+                name="normalize_output",
+                label="Normalize Post-Trim",
+                type="bool",
+                default=False,
+                tooltip="Normalize peak and loudness after trimming.",
+            )
+            return base_descs + [norm_desc]
+        elif mod in ("repair", "declip"):
+            cls = ProcessorRegistry.get_processor_class("declip")
+            base_descs = cls.get_parameter_descriptors() if cls else []
+            inpaint_desc = ParameterDescriptor(
+                name="inpaint_clicks",
+                label="Repair Clicks & Dropouts",
+                type="bool",
+                default=False,
+                tooltip="Chain restoration de-click and dropout inpainting after declipping.",
+            )
+            return base_descs + [inpaint_desc]
+        elif mod in ("clean", "denoise", "dereverb"):
+            if not self._submode:
+                self._submode = "dereverb" if mod == "dereverb" else "denoise"
+            clean_desc = ParameterDescriptor(
+                name="clean_mode",
+                label="Filter Target",
+                type="choice",
+                choices=["Noise Removal", "Reverb Suppression", "Full Clean (Both)"],
+                default="Noise Removal" if self._submode == "denoise" else ("Reverb Suppression" if self._submode == "dereverb" else "Full Clean (Both)"),
+                tooltip="Select whether to suppress background noise, room reverb, or chain both.",
+            )
+            proc = "dereverb" if self._submode == "dereverb" else "denoise"
+            cls = ProcessorRegistry.get_processor_class(proc)
+            return [clean_desc] + (cls.get_parameter_descriptors() if cls else [])
+        else:
+            proc_id = MODULE_TO_PROCESSOR_ID.get(mod, mod)
+            try:
+                cls = ProcessorRegistry.get_processor_class(proc_id)
+                return cls.get_parameter_descriptors() if cls else []
+            except Exception as e:
+                log.warning("Could not get parameter descriptors for module %s: %s", mod, e)
+                return []
+
+    def _on_pitch_time_mode_changed(self, new_val: str) -> None:
+        """Handle user changing mode in Pitch & Time Lab."""
+        new_sub = "pitch" if "pitch" in str(new_val).lower() else "tempo"
+        if self._submode != new_sub:
+            self._submode = new_sub
+            self._active_processor_id = "pitch_shifter" if new_sub == "pitch" else "tempo_changer"
+            self._update_rack_parameters()
+
+    def _on_clean_mode_changed(self, new_val: str) -> None:
+        """Handle user changing mode in Noise & Room Repair."""
+        val_lower = str(new_val).lower()
+        if "reverb" in val_lower:
+            new_sub = "dereverb"
+        elif "both" in val_lower or "full" in val_lower:
+            new_sub = "both"
+        else:
+            new_sub = "denoise"
+        if self._submode != new_sub:
+            self._submode = new_sub
+            self._active_processor_id = "dereverb" if new_sub == "dereverb" else "denoise"
+            self._update_rack_parameters()
+
+    def _update_rack_parameters(self) -> None:
+        """Query active processor descriptors and populate Slot 3 analog rack clusters."""
+        for layout in (self.cluster_a_layout, self.cluster_b_layout, self.cluster_c_layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.deleteLater()
+
+        accent_key = self._current_module_info.get("accent_key", "converter")
+        accent = TOKENS.colors.accents.get(accent_key, TOKENS.colors.accents["converter"])
+        descs = self._get_module_descriptors()
+
+        panel_a, panel_b, panel_c = self._rack_controller.build_clusters(
+            descriptors=descs,
+            accent_color=accent.base,
+            parent=self.slot3_rack,
+        )
+
+        self.cluster_a_layout.addWidget(panel_a)
+        self.cluster_b_layout.addWidget(panel_b)
+        self.cluster_c_layout.addWidget(panel_c)
+
+        # Wire mode switcher callbacks if available
+        if self._current_module_id in ("pitch_time", "pitch", "tempo"):
+            mode_ctrl = self._rack_controller.controls.get("lab_mode")
+            if mode_ctrl and hasattr(mode_ctrl, "choiceChanged"):
+                mode_ctrl.choiceChanged.connect(self._on_pitch_time_mode_changed)
+        elif self._current_module_id in ("clean", "denoise", "dereverb"):
+            clean_ctrl = self._rack_controller.controls.get("clean_mode")
+            if clean_ctrl and hasattr(clean_ctrl, "choiceChanged"):
+                clean_ctrl.choiceChanged.connect(self._on_clean_mode_changed)
+
+    def _update_custom_stage(self) -> None:
+        """Update or switch Slot 2 custom visual stage."""
+        accent_key = self._current_module_info.get("accent_key", "converter")
+        accent = TOKENS.colors.accents.get(accent_key, TOKENS.colors.accents["converter"])
+
+        if self._custom_stage_widget is not None:
+            self.deck_stack.removeWidget(self._custom_stage_widget)
+            self._custom_stage_widget.deleteLater()
+            self._custom_stage_widget = None
+
+        new_stage = create_custom_stage(
+            module_id=self._current_module_id,
+            accent_color=accent.base,
+            parent=self.slot2_deck,
+        )
+
+        if new_stage is not None:
+            self._custom_stage_widget = new_stage
+            self.deck_stack.addWidget(self._custom_stage_widget)
+
+            if isinstance(new_stage, WaveformStage):
+                if self._current_file:
+                    new_stage.load_audio_preview(self._current_file)
+                new_stage.rangeChanged.connect(self._on_waveform_range_changed)
+
+            if self._current_file or self._current_files:
+                self.deck_stack.setCurrentIndex(1)
+            else:
+                self.deck_stack.setCurrentIndex(0)
+        else:
+            self.deck_stack.setCurrentIndex(0)
+
+    def _on_waveform_range_changed(self, start_sec: float, end_sec: float) -> None:
+        """Sync WaveformStage range markers with trimmer controls in Slot 3."""
+        for name, widget in self._rack_controller.controls.items():
+            if name == "start_sec" and hasattr(widget, "setValue"):
+                widget.setValue(start_sec)
+            elif name == "end_sec" and hasattr(widget, "setValue"):
+                widget.setValue(end_sec)
+
     # --- Module Configuration ---
 
     def configure_module(self, module_info: Dict[str, Any], file_path: Optional[str] = None) -> None:
         """Inject module configuration into the 4-slot workspace."""
         self._current_module_info = module_info
         self._current_module_id = module_info.get("id", "converter")
+        self._submode = None
+        self._active_processor_id = MODULE_TO_PROCESSOR_ID.get(self._current_module_id, self._current_module_id)
         accent_key = module_info.get("accent_key", "converter")
         accent = TOKENS.colors.accents.get(accent_key, TOKENS.colors.accents["converter"])
 
@@ -649,7 +897,283 @@ class WorkspacePage(QWidget):
 
         self._update_file_display()
 
+        # Update Slot 3 Rack Clusters with dynamic analog controls
+        self._update_rack_parameters()
+
+        # Update Slot 2 Custom Stage
+        self._update_custom_stage()
+
         # Update Slot 4 CTA Button
         action_text = module_info.get("action_text", "Execute")
         self.btn_action_cta.setText(action_text)
         self.btn_action_cta.set_accent_key(accent_key)
+        self.btn_action_cta.setEnabled(True)
+
+    # --- DSP Execution & Worker Integration ---
+
+    def execute_action(self) -> None:
+        """Trigger background processing of current audio buffer through active processor(s)."""
+        if not self._current_file and not self._current_files:
+            self.lbl_file_pill.setText("ERROR: NO INPUT FILE · SELECT OR DROP AUDIO FIRST")
+            self.lbl_file_pill.setStyleSheet(
+                f"background-color: {TOKENS.colors.background.surface_well};"
+                f"color: {TOKENS.colors.semantic.error};"
+                f"border: 1px solid {TOKENS.colors.semantic.error};"
+                f"border-radius: {TOKENS.radii.sm}px;"
+                f"padding: 8px 14px;"
+            )
+            return
+
+        if self._current_task is not None and self._current_task.is_running:
+            log.warning("Audio task is already running.")
+            return
+
+        options = self._rack_controller.get_parameters()
+        input_paths = [Path(f) for f in self._current_files] if self._current_files else [Path(self._current_file)]
+
+        config = AppConfig()
+        output_dir = config.output_dir
+        if not output_dir.exists():
+            try:
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                output_dir = input_paths[0].parent
+
+        self.btn_action_cta.setEnabled(False)
+        self.btn_action_cta.setText("PROCESSING...")
+        self.lbl_deck_badge.setText("DSP ACTIVE")
+        self.lbl_deck_badge.setStyleSheet(f"color: {TOKENS.colors.semantic.warning}; background: transparent;")
+
+        # Case 1: Music Analyzer (Key & Tempo + Audio Analyzer)
+        if self._current_module_id == "analyze":
+            def run_analysis(cancel_token=None, on_progress=None):
+                kd = ProcessorRegistry.get_processor("key_detector")
+                aa = ProcessorRegistry.get_processor("audio_analyzer", ffmpeg_bin=config.ffmpeg_path)
+                res = {}
+                total = len(input_paths)
+                for i, p in enumerate(input_paths):
+                    if cancel_token and cancel_token.is_set():
+                        break
+                    if on_progress:
+                        on_progress((i / total) * 0.5, f"[{p.name}] Analyzing Key & Tempo...")
+                    k_res = kd.process_file(p, output_dir=output_dir, options=options, cancel_flag=cancel_token)
+                    if on_progress:
+                        on_progress(((i + 0.5) / total), f"[{p.name}] Analyzing Loudness & Peaks...")
+                    a_res = aa.process_file(p, output_dir=output_dir, options=options, cancel_flag=cancel_token)
+                    combined = {}
+                    if isinstance(k_res, dict):
+                        combined.update(k_res)
+                    if isinstance(a_res, dict):
+                        combined.update(a_res)
+                    res[p] = combined
+                if on_progress:
+                    on_progress(1.0, "Analysis complete.")
+                return res
+
+            self._current_task = self._task_runner.submit_callable(
+                run_analysis,
+                name="Music Analysis",
+                on_progress=self._on_worker_progress,
+                on_finished=self._on_worker_finished,
+                on_error=self._on_worker_error,
+            )
+            return
+
+        # Case 2: Clip & Click Repair Chain (Declip + Inpaint Clicks/Dropouts)
+        if self._current_module_id in ("repair", "declip") and options.get("inpaint_clicks"):
+            def run_repair_chain(cancel_token=None, on_progress=None):
+                declip = ProcessorRegistry.get_processor("declip", ffmpeg_bin=config.ffmpeg_path)
+                resto = ProcessorRegistry.get_processor("restoration", ffmpeg_bin=config.ffmpeg_path)
+                res = {}
+                total = len(input_paths)
+                for i, p in enumerate(input_paths):
+                    if cancel_token and cancel_token.is_set():
+                        break
+                    def p1(sub_f, m):
+                        if on_progress:
+                            on_progress((i / total) + (sub_f / (total * 2)), f"[{p.name}] Declip: {m}")
+                    out1 = declip.process_file(p, output_dir=output_dir, options=options, on_progress=p1, cancel_flag=cancel_token)
+                    if cancel_token and cancel_token.is_set():
+                        break
+                    def p2(sub_f, m):
+                        if on_progress:
+                            on_progress((i / total) + 0.5 / total + (sub_f / (total * 2)), f"[{p.name}] Restoration: {m}")
+                    out2 = resto.process_file(out1, output_dir=output_dir, options={"target_artifacts": ["digital_glitch", "dropout", "vinyl_crackle"], "restoration_strength": 0.5}, on_progress=p2, cancel_flag=cancel_token)
+                    res[p] = out2
+                return res
+
+            self._current_task = self._task_runner.submit_callable(
+                run_repair_chain,
+                name="Clip & Click Repair Chain",
+                on_progress=self._on_worker_progress,
+                on_finished=self._on_worker_finished,
+                on_error=self._on_worker_error,
+            )
+            return
+
+        # Case 3: Audio Editor Chain (Trim + Post-Trim Normalize)
+        if self._current_module_id in ("edit", "trim", "trimmer") and options.get("normalize_output"):
+            def run_edit_chain(cancel_token=None, on_progress=None):
+                trimmer = ProcessorRegistry.get_processor("audio_trimmer", ffmpeg_bin=config.ffmpeg_path)
+                normalizer = ProcessorRegistry.get_processor("loudness_normalizer", ffmpeg_bin=config.ffmpeg_path)
+                res = {}
+                total = len(input_paths)
+                for i, p in enumerate(input_paths):
+                    if cancel_token and cancel_token.is_set():
+                        break
+                    def p1(sub_f, m):
+                        if on_progress:
+                            on_progress((i / total) + (sub_f / (total * 2)), f"[{p.name}] Trimming: {m}")
+                    out1 = trimmer.process_file(p, output_dir=output_dir, options=options, on_progress=p1, cancel_flag=cancel_token)
+                    if cancel_token and cancel_token.is_set():
+                        break
+                    def p2(sub_f, m):
+                        if on_progress:
+                            on_progress((i / total) + 0.5 / total + (sub_f / (total * 2)), f"[{p.name}] Normalizing: {m}")
+                    out2 = normalizer.process_file(out1, output_dir=output_dir, options={"target_lufs": -14.0, "max_true_peak": -1.0}, on_progress=p2, cancel_flag=cancel_token)
+                    res[p] = out2
+                return res
+
+            self._current_task = self._task_runner.submit_callable(
+                run_edit_chain,
+                name="Trim & Normalize Chain",
+                on_progress=self._on_worker_progress,
+                on_finished=self._on_worker_finished,
+                on_error=self._on_worker_error,
+            )
+            return
+
+        # Case 4: Noise & Room Repair Chain (Denoise + Dereverb)
+        if self._current_module_id in ("clean", "denoise") and self._submode == "both":
+            def run_clean_chain(cancel_token=None, on_progress=None):
+                denoiser = ProcessorRegistry.get_processor("denoise", ffmpeg_bin=config.ffmpeg_path)
+                dereverber = ProcessorRegistry.get_processor("dereverb", ffmpeg_bin=config.ffmpeg_path)
+                res = {}
+                total = len(input_paths)
+                for i, p in enumerate(input_paths):
+                    if cancel_token and cancel_token.is_set():
+                        break
+                    def p1(sub_f, m):
+                        if on_progress:
+                            on_progress((i / total) + (sub_f / (total * 2)), f"[{p.name}] Denoise: {m}")
+                    out1 = denoiser.process_file(p, output_dir=output_dir, options=options, on_progress=p1, cancel_flag=cancel_token)
+                    if cancel_token and cancel_token.is_set():
+                        break
+                    def p2(sub_f, m):
+                        if on_progress:
+                            on_progress((i / total) + 0.5 / total + (sub_f / (total * 2)), f"[{p.name}] Dereverb: {m}")
+                    out2 = dereverber.process_file(out1, output_dir=output_dir, options={"amount": "moderate", "preserve_warmth": True}, on_progress=p2, cancel_flag=cancel_token)
+                    res[p] = out2
+                return res
+
+            self._current_task = self._task_runner.submit_callable(
+                run_clean_chain,
+                name="Denoise & Dereverb Clean Chain",
+                on_progress=self._on_worker_progress,
+                on_finished=self._on_worker_finished,
+                on_error=self._on_worker_error,
+            )
+            return
+
+        # Case 5: Standard Single-Processor Execution
+        proc_id = self._active_processor_id or MODULE_TO_PROCESSOR_ID.get(self._current_module_id, self._current_module_id)
+        try:
+            try:
+                processor = ProcessorRegistry.get_processor(proc_id, ffmpeg_bin=config.ffmpeg_path)
+            except TypeError:
+                processor = ProcessorRegistry.get_processor(proc_id)
+        except Exception as e:
+            log.exception("Failed to instantiate processor: %s", proc_id)
+            self.lbl_file_pill.setText(f"ERROR: {str(e)[:40]}")
+            self.btn_action_cta.setEnabled(True)
+            self.btn_action_cta.setText(self._current_module_info.get("action_text", "Execute"))
+            return
+
+        self._current_task = self._task_runner.submit_processor(
+            processor=processor,
+            input_paths=input_paths,
+            output_dir=output_dir,
+            options=options,
+            name=self._current_module_info.get("title", "Audio Task"),
+            on_progress=self._on_worker_progress,
+            on_finished=self._on_worker_finished,
+            on_error=self._on_worker_error,
+        )
+
+    def _on_worker_progress(self, val: float, msg: str) -> None:
+        """Handle background worker progress update."""
+        pct = int(val * 100)
+        eta_str = ""
+        if self._current_task and self._current_task.eta_seconds:
+            eta_s = int(self._current_task.eta_seconds)
+            eta_str = f" · ETA {eta_s}s"
+        self.lbl_engine_status.setText(f"DSP: {pct}%{eta_str}")
+        self.lbl_file_pill.setText(f"PROCESSING: {pct}%{eta_str} — {msg}")
+
+    def _on_worker_finished(self, result: Any) -> None:
+        """Handle worker completion."""
+        action_text = self._current_module_info.get("action_text", "Execute")
+        self.btn_action_cta.setText(action_text)
+        self.btn_action_cta.setEnabled(True)
+        self.lbl_engine_status.setText("COREAUDIO · 48 kHz")
+
+        # Unwrap TaskResult if returned
+        data = result
+        is_cancelled = False
+        is_failed = False
+        error_msg = None
+        if isinstance(result, TaskResult):
+            data = result.data
+            is_cancelled = result.is_cancelled
+            is_failed = (result.status.value == "failed")
+            error_msg = result.error
+
+        if is_cancelled:
+            self.lbl_deck_badge.setText("CANCELLED")
+            self.lbl_deck_badge.setStyleSheet(f"color: {TOKENS.colors.semantic.warning}; background: transparent;")
+            self.lbl_file_pill.setText("PROCESSING CANCELLED BY USER")
+            return
+
+        if is_failed:
+            self._on_worker_error(error_msg or "Unknown error occurred")
+            return
+
+        self.lbl_deck_badge.setText("COMPLETED")
+        self.lbl_deck_badge.setStyleSheet(f"color: {TOKENS.colors.semantic.success}; background: transparent;")
+
+        if isinstance(self._custom_stage_widget, AnalysisStage) and isinstance(data, dict):
+            first_res = next(iter(data.values())) if data else {}
+            if isinstance(first_res, dict):
+                key = first_res.get("key", "A MINOR")
+                camelot = first_res.get("camelot", "8A")
+                bpm = float(first_res.get("bpm", 120.0))
+                conf = float(first_res.get("confidence", 0.95))
+                self._custom_stage_widget.set_results(key, camelot, bpm, conf)
+
+        accent_key = self._current_module_info.get("accent_key", "converter")
+        accent = TOKENS.colors.accents.get(accent_key, TOKENS.colors.accents["converter"])
+        self.lbl_file_pill.setText("PROCESSING COMPLETED SUCCESSFULLY")
+        self.lbl_file_pill.setStyleSheet(
+            f"background-color: {TOKENS.colors.background.surface_well};"
+            f"color: {accent.base};"
+            f"border: 1px solid {accent.base};"
+            f"border-radius: {TOKENS.radii.sm}px;"
+            f"padding: 8px 14px;"
+        )
+
+    def _on_worker_error(self, err: str) -> None:
+        """Handle worker error."""
+        action_text = self._current_module_info.get("action_text", "Execute")
+        self.btn_action_cta.setText(action_text)
+        self.btn_action_cta.setEnabled(True)
+        self.lbl_engine_status.setText("DSP ERROR")
+        self.lbl_deck_badge.setText("ERROR")
+        self.lbl_deck_badge.setStyleSheet(f"color: {TOKENS.colors.semantic.error}; background: transparent;")
+        self.lbl_file_pill.setText(f"ERROR: {err[:60]}")
+        self.lbl_file_pill.setStyleSheet(
+            f"background-color: {TOKENS.colors.background.surface_well};"
+            f"color: {TOKENS.colors.semantic.error};"
+            f"border: 1px solid {TOKENS.colors.semantic.error};"
+            f"border-radius: {TOKENS.radii.sm}px;"
+            f"padding: 8px 14px;"
+        )
