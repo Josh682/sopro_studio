@@ -11,21 +11,22 @@ import sys
 from pathlib import Path
 
 def _fix_pyside6_hidden_flags() -> None:
-    """Fix macOS UF_HIDDEN flag on PySide6 .dylib files.
-
-    pip install PySide6 on macOS marks .dylib plugin files with the hidden
-    flag (UF_HIDDEN). Qt's QFactoryLoader uses QDir with default filters
-    which skip hidden files, so the cocoa platform plugin is invisible
-    despite being physically present. We clear the flag recursively.
-    """
+    """Fix macOS UF_HIDDEN flag on PySide6 .dylib files once if needed."""
     try:
         import PySide6
         pyside_dir = Path(PySide6.__file__).parent
+        sentinel = pyside_dir / ".flags_fixed"
+        if sentinel.exists():
+            return
         if pyside_dir.is_dir():
             subprocess.run(
                 ["chflags", "-R", "nohidden", str(pyside_dir)],
-                capture_output=True, timeout=10,
+                capture_output=True, timeout=5,
             )
+            try:
+                sentinel.touch()
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -37,12 +38,16 @@ try:
     from PySide6.QtCore import (
         QEvent,
         QMimeData,
+        QObject,
         QPoint,
         QPointF,
         QRect,
         QRectF,
+        QSettings,
         QSize,
         Qt,
+        QThread,
+        QTimer,
         QUrl,
         Signal,
     )
@@ -57,6 +62,7 @@ try:
         QIcon,
         QKeyEvent,
         QLinearGradient,
+        QRadialGradient,
         QMouseEvent,
         QPainter,
         QPainterPath,
@@ -71,6 +77,7 @@ try:
         QGridLayout,
         QHBoxLayout,
         QLabel,
+        QLineEdit,
         QMainWindow,
         QPushButton,
         QSizePolicy,
@@ -90,12 +97,16 @@ except ImportError:
         from PyQt6.QtCore import (
             QEvent,
             QMimeData,
+            QObject,
             QPoint,
             QPointF,
             QRect,
             QRectF,
+            QSettings,
             QSize,
             Qt,
+            QThread,
+            QTimer,
             QUrl,
             pyqtSignal as Signal,
         )
@@ -110,6 +121,7 @@ except ImportError:
             QIcon,
             QKeyEvent,
             QLinearGradient,
+            QRadialGradient,
             QMouseEvent,
             QPainter,
             QPainterPath,
@@ -124,6 +136,7 @@ except ImportError:
             QGridLayout,
             QHBoxLayout,
             QLabel,
+            QLineEdit,
             QMainWindow,
             QPushButton,
             QSizePolicy,
@@ -158,11 +171,16 @@ __all__ = [
     "QtGui",
     "QtWidgets",
     "Qt",
+    "QEvent",
+    "QObject",
+    "QThread",
+    "QTimer",
     "Signal",
     "QPoint",
     "QPointF",
     "QRect",
     "QRectF",
+    "QSettings",
     "QSize",
     "QUrl",
     "QMimeData",
@@ -177,6 +195,7 @@ __all__ = [
     "QDragLeaveEvent",
     "QDropEvent",
     "QLinearGradient",
+    "QRadialGradient",
     "QPainter",
     "QPainterPath",
     "QPalette",
@@ -189,6 +208,7 @@ __all__ = [
     "QStackedWidget",
     "QFrame",
     "QLabel",
+    "QLineEdit",
     "QPushButton",
     "QVBoxLayout",
     "QHBoxLayout",

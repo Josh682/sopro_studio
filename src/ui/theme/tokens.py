@@ -1,4 +1,4 @@
-"""Design token loader and strongly-typed theme bridge for Audio Quick Toolkit.
+"""Design token loader and strongly-typed theme bridge for Umbra.
 
 Single Source of Truth: tokens.json (root or docs/tokens.json).
 Adheres strictly to DESIGN.md Non-Negotiables.
@@ -70,13 +70,22 @@ class AccentToken:
 
 @dataclass(frozen=True)
 class BackgroundColors:
-    app: str = "#090B0E"
-    chassis: str = "#090B0E"
-    surface_card: str = "#131720"
-    surface_card_hover: str = "#181E2A"
-    surface_rack: str = "#11141A"
-    surface_well: str = "#0A0C10"
+    app: str = "#160F09"
+    chassis: str = "#160F09"
+    surface_card: str = "#33251A"
+    surface_card_hover: str = "#483625"
+    surface_rack: str = "#2D2116"
+    surface_well: str = "#120E0B"
     surface_display_glass: str = "#18130E"
+    wood_walnut_base: str = "#2A1A10"
+    wood_walnut_grain: str = "#3D2617"
+    wood_walnut_shadow: str = "#1A100A"
+    chassis_bronze_base: str = "#160F09"
+    chassis_bronze_light: str = "#483625"
+    chassis_bronze_dark: str = "#100A05"
+    plate_modular: str = "#33251A"
+    plate_groove: str = "#17100B"
+    surface_well_dark: str = "#120E0B"
 
     @property
     def app_qcolor(self) -> QColor:
@@ -103,17 +112,27 @@ class BackgroundColors:
         return hex_to_qcolor(self.surface_well)
 
     @property
+    def surface_well_dark_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.surface_well_dark)
+
+    @property
     def surface_display_glass_qcolor(self) -> QColor:
         return hex_to_qcolor(self.surface_display_glass)
 
 
 @dataclass(frozen=True)
 class TextColors:
-    primary: str = "#F0F3F8"
-    secondary: str = "#8E9AA8"
-    muted: str = "#525D6B"
-    button_dark: str = "#090B0E"
-    on_accent: str = "#0B0C10"
+    primary: str = "#EDE6DC"
+    secondary: str = "#9E9182"
+    muted: str = "#A39281"
+    button_dark: str = "#120E0B"
+    on_accent: str = "#120E0B"
+    silkscreen_title: str = "#EDE6DC"
+    silkscreen_sub: str = "#9E9182"
+    silkscreen_tag: str = "#B5A899"
+    display_readout: str = "#FCD34D"
+    display_terminal: str = "#EDE6DC"
+    knob_label: str = "#A39281"
 
     @property
     def primary_qcolor(self) -> QColor:
@@ -134,6 +153,18 @@ class TextColors:
     @property
     def on_accent_qcolor(self) -> QColor:
         return hex_to_qcolor(self.on_accent)
+
+    @property
+    def silkscreen_title_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.silkscreen_title)
+
+    @property
+    def silkscreen_sub_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.silkscreen_sub)
+
+    @property
+    def silkscreen_tag_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.silkscreen_tag)
 
 
 @dataclass(frozen=True)
@@ -185,12 +216,37 @@ class SemanticColors:
 
 
 @dataclass(frozen=True)
+class LampColors:
+    amber_glow: str = "rgba(245, 158, 11, 0.45)"
+    amber_lens: str = "#F59E0B"
+    amber_core: str = "#FFF1D6"
+    amber_dim: str = "#523617"
+    led_green_lit: str = "#22C55E"
+    led_amber_lit: str = "#F59E0B"
+    led_red_lit: str = "#EF4444"
+    led_dark_unlit: str = "#241C15"
+
+    @property
+    def led_green_lit_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.led_green_lit)
+
+    @property
+    def led_amber_lit_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.led_amber_lit)
+
+    @property
+    def led_red_lit_qcolor(self) -> QColor:
+        return hex_to_qcolor(self.led_red_lit)
+
+
+@dataclass(frozen=True)
 class ColorTokens:
     background: BackgroundColors = field(default_factory=BackgroundColors)
     text: TextColors = field(default_factory=TextColors)
     border: BorderColors = field(default_factory=BorderColors)
     accents: Dict[str, AccentToken] = field(default_factory=dict)
     semantic: SemanticColors = field(default_factory=SemanticColors)
+    lamps: LampColors = field(default_factory=LampColors)
 
 
 @dataclass(frozen=True)
@@ -217,6 +273,8 @@ class GridDimensions:
     gap_y: int = 16
     card_width: int = 346
     card_height: int = 216
+    card_rack_height: int = 140
+    card_description_height: int = 0
 
 
 @dataclass(frozen=True)
@@ -250,6 +308,23 @@ class VUMeterDimensions:
 
 
 @dataclass(frozen=True)
+class BrowseButtonDimensions:
+    height: int = 18
+    radius: int = 6
+
+
+@dataclass(frozen=True)
+class HardwareDimensions:
+    wood_cheeks_width: int = 16
+    screw_diameter: int = 8
+    screw_offset: int = 6
+    knob_outer_diameter: int = 36
+    knob_cap_diameter: int = 28
+    vu_meter_large_diameter: int = 110
+    vu_meter_dual_diameter: int = 82
+
+
+@dataclass(frozen=True)
 class DimensionTokens:
     window: WindowDimensions = field(default_factory=WindowDimensions)
     shell: ShellDimensions = field(default_factory=ShellDimensions)
@@ -257,6 +332,8 @@ class DimensionTokens:
     workspace: WorkspaceDimensions = field(default_factory=WorkspaceDimensions)
     button: ButtonDimensions = field(default_factory=ButtonDimensions)
     vu_meter: VUMeterDimensions = field(default_factory=VUMeterDimensions)
+    browse_button: BrowseButtonDimensions = field(default_factory=BrowseButtonDimensions)
+    hardware: HardwareDimensions = field(default_factory=HardwareDimensions)
 
 
 @dataclass(frozen=True)
@@ -301,6 +378,12 @@ class TypographyTokens:
     data_mono_lg: TypographyItem = field(default_factory=lambda: TypographyItem(size=28, weight=700, line_height=32))
     data_mono_md: TypographyItem = field(default_factory=lambda: TypographyItem(size=14, weight=500, line_height=18))
     data_mono_sm: TypographyItem = field(default_factory=lambda: TypographyItem(size=11, weight=500, line_height=14))
+    silkscreen_title: TypographyItem = field(default_factory=lambda: TypographyItem(size=15, weight=700, line_height=20))
+    silkscreen_sub: TypographyItem = field(default_factory=lambda: TypographyItem(size=11, weight=400, line_height=15))
+    silkscreen_tag: TypographyItem = field(default_factory=lambda: TypographyItem(size=10, weight=500, line_height=14))
+    display_readout: TypographyItem = field(default_factory=lambda: TypographyItem(size=13, weight=700, line_height=16))
+    display_terminal: TypographyItem = field(default_factory=lambda: TypographyItem(size=10, weight=500, line_height=13))
+    knob_label: TypographyItem = field(default_factory=lambda: TypographyItem(size=9, weight=700, line_height=12))
 
     def create_font(self, item_name: str) -> QFont:
         """Create a QFont configured with token family, point/pixel size, and weight."""
@@ -308,8 +391,11 @@ class TypographyTokens:
         if not isinstance(item, TypographyItem):
             return QFont(self.font_family_ui, 13)
 
-        family = self.font_family_mono if "mono" in item_name else self.font_family_ui
+        mono_keywords = ("mono", "terminal", "readout", "tag")
+        is_mono = any(k in item_name for k in mono_keywords)
+        family = "Menlo" if is_mono else "Helvetica Neue"
         font = QFont(family)
+        font.setFamilies([family, "Courier New"] if is_mono else [family, "Arial"])
         font.setPixelSize(item.size)
 
         # Map integer weights (400, 500, 600, 700) to QFont.Weight

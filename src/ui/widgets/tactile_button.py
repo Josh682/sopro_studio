@@ -1,11 +1,13 @@
-"""ChunkyButton / TactileButton - 3D Mechanical Tactile Push Button.
+"""ChunkyButton / TactileButton - Analog Console Amber Illuminated Button.
 
 Subclasses QPushButton with custom QPainter rendering:
-- 3D physical press: 4px rest bevel, 3px hover, 1px active/pressed bevel
-- translateY(3px) physical travel when pressed
-- Module-specific solid accent face and exact darker shadow bevel
-- Bold sans-serif high-contrast dark text (#090B0E / #000000)
-- Tactile audio click callback hook
+- Analog Console amber backlighting per DESIGN.md Section 6.1
+- Off state: Warm dark amber lens (#3D2813 -> #24180A) with silkscreen text (#8C7355)
+- Hover state: 40% amber illumination with halo glow
+- Pressed state: 100% lit amber lens (#F59E0B -> #D97706), filament core (#FFF3DB), +2px physical travel
+- 3D mechanical bevels: raised ring (#2A2016) with top highlight (rgba(255,255,255,0.15))
+- Corner radius: 6px per DESIGN.md
+- Tactile audio click callback hook preserved
 """
 
 from __future__ import annotations
@@ -15,11 +17,13 @@ from typing import Callable, Optional
 from src.ui.qt import (
     QColor,
     QFont,
+    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
     QPointF,
     QPushButton,
+    QRadialGradient,
     QRectF,
     QSize,
     Qt,
@@ -30,7 +34,7 @@ from src.ui.theme.tokens import TOKENS, AccentToken
 
 
 class TactileButton(QPushButton):
-    """3D tactile button with mechanical depth and travel."""
+    """Analog Console illuminated push button with 3D mechanical bezel and amber lens."""
 
     def __init__(
         self,
@@ -49,20 +53,21 @@ class TactileButton(QPushButton):
 
         # Token metrics
         self._bevel_rest = TOKENS.dimensions.button.bevel_depth  # 4px
-        self._bevel_hover = 3  # 3px hover elevation per prompt
         self._bevel_pressed = TOKENS.dimensions.button.pressed_bevel_depth  # 1px
-        self._travel_y = TOKENS.dimensions.button.pressed_translation_y  # 3px
-        self._corner_radius = float(TOKENS.radii.md)  # 8px
+        self._travel_y = 2  # 2px physical travel per DESIGN.md Section 6.1
+        self._corner_radius = float(TOKENS.radii.button)  # 6px
 
-        # Typography
-        self._button_font = QFont(TOKENS.typography.font_family_ui, 13)
+        # Typography: 12px Bold with Helvetica Neue
+        self._button_font = QFont("Helvetica Neue")
+        self._button_font.setFamilies(["Helvetica Neue", "Arial"])
+        self._button_font.setPixelSize(12)
         self._button_font.setWeight(QFont.Weight.Bold)
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
 
-        # Set fixed height based on face + rest bevel clearance
+        # Fixed height = face + bevel rest
         self.setFixedHeight(self._face_height + self._bevel_rest)
 
     @property
@@ -83,12 +88,10 @@ class TactileButton(QPushButton):
         self._audio_click_callback = callback
 
     def sizeHint(self) -> QSize:
-        """Preferred size hint."""
         return QSize(160, self._face_height + self._bevel_rest)
 
     def minimumSizeHint(self) -> QSize:
-        """Minimum size hint."""
-        return QSize(120, self._face_height + self._bevel_rest)
+        return QSize(100, self._face_height + self._bevel_rest)
 
     # --- Interaction Events ---
 
@@ -124,10 +127,10 @@ class TactileButton(QPushButton):
         super().focusOutEvent(event)
         self.update()
 
-    # --- Custom Painting ---
+    # --- Skeuomorphic Custom Painting ---
 
     def paintEvent(self, event) -> None:
-        """Render tactile 3D button layers using QPainter."""
+        """Render amber illuminated button with recessed well, metallic bezel, and lens."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
@@ -136,64 +139,80 @@ class TactileButton(QPushButton):
         total_h = float(self.height())
         face_h = total_h - float(self._bevel_rest)
         r = self._corner_radius
-        accent = self.accent_token
 
-        # Determine geometry and palette by state
-        if not self.isEnabled():
-            y_offset = 0.0
-            bevel = 0.0
-            face_color = QColor("#202531")
-            shadow_color = QColor("#141720")
-            text_color = QColor("#525D6B")
-            painter.setOpacity(0.4)
-        elif self.isDown():
-            y_offset = float(self._travel_y)  # +3px
-            bevel = float(self._bevel_pressed)  # 1px
-            face_color = accent.base_qcolor
-            shadow_color = accent.darker_qcolor
-            text_color = TOKENS.colors.text.button_dark_qcolor
-            painter.setOpacity(1.0)
-        elif self._is_hovered:
-            y_offset = 0.0
-            bevel = float(self._bevel_hover)  # 3px
-            # Lightness +4% on hover
-            face_color = accent.base_qcolor.lighter(104)
-            shadow_color = accent.darker_qcolor
-            text_color = TOKENS.colors.text.button_dark_qcolor
-            painter.setOpacity(1.0)
+        is_down = self.isDown()
+        is_hover = self._is_hovered and self.isEnabled()
+        is_enabled = self.isEnabled()
+
+        y_offset = float(self._travel_y) if is_down else 0.0
+
+        # 1. Base Recessed Well (#120E0B)
+        well_rect = QRectF(0.0, 0.0, w, total_h)
+        well_path = QPainterPath()
+        well_path.addRoundedRect(well_rect, r + 1.0, r + 1.0)
+        painter.fillPath(well_path, QColor("#120E0B"))
+
+        # 2. Bevel Ring / Outer Mechanical Body (#2A2016)
+        bezel_rect = QRectF(1.0, y_offset + 1.0, w - 2.0, face_h + (1.0 if not is_down else 0.0))
+        bezel_path = QPainterPath()
+        bezel_path.addRoundedRect(bezel_rect, r, r)
+        painter.fillPath(bezel_path, QColor("#2A2016"))
+
+        # 3. Lens Body (QLinearGradient)
+        lens_rect = bezel_rect.adjusted(2.0, 2.0, -2.0, -2.0)
+        lens_path = QPainterPath()
+        lens_path.addRoundedRect(lens_rect, max(2.0, r - 2.0), max(2.0, r - 2.0))
+
+        lens_grad = QLinearGradient(0.0, lens_rect.top(), 0.0, lens_rect.bottom())
+
+        if not is_enabled:
+            lens_grad.setColorAt(0.0, QColor("#221A12"))
+            lens_grad.setColorAt(1.0, QColor("#140F0A"))
+            text_color = QColor("#4A3B2C")
+        elif is_down:
+            # 100% Lit Amber
+            lens_grad.setColorAt(0.0, QColor("#F59E0B"))
+            lens_grad.setColorAt(1.0, QColor("#D97706"))
+            text_color = QColor("#120E0B")
+        elif is_hover:
+            # 40% Lit Amber
+            lens_grad.setColorAt(0.0, QColor("#7A4C18"))
+            lens_grad.setColorAt(1.0, QColor("#4D2C0C"))
+            text_color = QColor("#D4A265")
         else:
-            y_offset = 0.0
-            bevel = float(self._bevel_rest)  # 4px
-            face_color = accent.base_qcolor
-            shadow_color = accent.darker_qcolor
-            text_color = TOKENS.colors.text.button_dark_qcolor
-            painter.setOpacity(1.0)
+            # Off state
+            lens_grad.setColorAt(0.0, QColor("#3D2813"))
+            lens_grad.setColorAt(1.0, QColor("#24180A"))
+            text_color = QColor("#8C7355")
 
-        # 1. Draw 3D bottom bevel/shadow layer
-        if bevel > 0.0:
-            shadow_rect = QRectF(0.0, y_offset, w, face_h + bevel)
-            shadow_path = QPainterPath()
-            shadow_path.addRoundedRect(shadow_rect, r, r)
-            painter.fillPath(shadow_path, shadow_color)
+        painter.fillPath(lens_path, lens_grad)
 
-        # 2. Draw front button face
-        face_rect = QRectF(0.0, y_offset, w, face_h)
-        face_path = QPainterPath()
-        face_path.addRoundedRect(face_rect, r, r)
-        painter.fillPath(face_path, face_color)
+        # 4. Filament Core (when lit / pressed)
+        if is_down and is_enabled:
+            filament = QRadialGradient(lens_rect.center(), lens_rect.width() * 0.4)
+            filament.setColorAt(0.0, QColor(255, 243, 219, 200))
+            filament.setColorAt(0.5, QColor(245, 158, 11, 100))
+            filament.setColorAt(1.0, QColor(245, 158, 11, 0))
+            painter.fillPath(lens_path, filament)
 
-        # 3. Draw focus ring if focused
-        if self.hasFocus() and self.isEnabled():
-            pen = QPen(TOKENS.colors.border.focus_qcolor, 2.0)
-            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            focus_rect = face_rect.adjusted(1.0, 1.0, -1.0, -1.0)
-            painter.drawRoundedRect(focus_rect, r - 1.0, r - 1.0)
+        # 5. Top Bevel Highlight (1px light reflection)
+        highlight_pen = QPen(QColor(255, 255, 255, 38 if not is_down else 15), 1.0)
+        painter.setPen(highlight_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(
+            QPointF(lens_rect.left() + r, lens_rect.top()),
+            QPointF(lens_rect.right() - r, lens_rect.top()),
+        )
 
-        # 4. Draw button text
+        # 6. Focus Ring
+        if self.hasFocus() and is_enabled:
+            focus_pen = QPen(QColor("#F59E0B"), 2.0)
+            painter.setPen(focus_pen)
+            painter.drawRoundedRect(well_rect.adjusted(1.0, 1.0, -1.0, -1.0), r, r)
+
+        # 7. Button Label
         painter.setFont(self._button_font)
         painter.setPen(text_color)
-        painter.drawText(face_rect, Qt.AlignmentFlag.AlignCenter, self.text())
+        painter.drawText(lens_rect, Qt.AlignmentFlag.AlignCenter, self.text())
 
         painter.end()
