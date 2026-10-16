@@ -9,11 +9,62 @@ from typing import Any, Callable
 import numpy as np
 from scipy import signal
 
+from src.core.audio_engine import AudioBuffer, AudioEngine
+from src.core.exporter import ExportEngine
 from src.core.processor_registry import ProcessorRegistry
-from src.core.processors.base_enhancement_processor import BaseEnhancementProcessor
-from src.core.processors.base_processor import ParameterDescriptor, ProcessorMetadata
+from src.core.processors.base_processor import (
+    BaseProcessor,
+    ParameterDescriptor,
+    ProcessingMode,
+    ProcessorMetadata,
+)
+from src.utils.config import AppConfig
 
 log = logging.getLogger("sound_processor.core.processors.denoise")
+
+
+def detect_hum_fundamental(audio: np.ndarray, sr: int, threshold_db: float = 8.0) -> float | None:
+    """Detect whether prominent 50Hz or 60Hz electrical ground hum is present in the signal."""
+    mono = np.mean(audio, axis=1) if audio.ndim == 2 else audio
+    max_len = int(min(len(mono), sr * 5))
+    if max_len < 1024:
+        return None
+    segment = mono[:max_len]
+
+    # Welch PSD with fine resolution
+    nperseg = min(len(segment), 32768)
+    if nperseg < 2048:
+        return None
+    freqs, psd = signal.welch(segment, fs=sr, nperseg=nperseg)
+
+    # Broadband noise floor in 30Hz - 200Hz
+    band_mask = (freqs >= 30.0) & (freqs <= 200.0)
+    if not np.any(band_mask):
+        return None
+    median_power = np.median(psd[band_mask]) + 1e-12
+
+    # Check for 50Hz: peak within [49.0, 51.0] must exceed neighbors
+    mask_50 = (freqs >= 49.0) & (freqs <= 51.0)
+    peak_50 = np.max(psd[mask_50]) if np.any(mask_50) else 0.0
+    ratio_50_db = 10.0 * np.log10(peak_50 / median_power) if peak_50 > 0 else -100
+
+    # Check for 60Hz: peak within [59.0, 61.0] must exceed neighbors
+    mask_60 = (freqs >= 59.0) & (freqs <= 61.0)
+    peak_60 = np.max(psd[mask_60]) if np.any(mask_60) else 0.0
+    ratio_60_db = 10.0 * np.log10(peak_60 / median_power) if peak_60 > 0 else -100
+
+    # Verify that 50 or 60 is a local maximum in [45, 55] or [55, 65]
+    mask_50_local = (freqs >= 45.0) & (freqs <= 55.0)
+    is_50_local_peak = np.any(mask_50_local) and (peak_50 >= np.max(psd[mask_50_local]))
+
+    mask_60_local = (freqs >= 55.0) & (freqs <= 65.0)
+    is_60_local_peak = np.any(mask_60_local) and (peak_60 >= np.max(psd[mask_60_local]))
+
+    if ratio_50_db >= threshold_db and is_50_local_peak and ratio_50_db > ratio_60_db:
+        return 50.0
+    elif ratio_60_db >= threshold_db and is_60_local_peak:
+        return 60.0
+    return None
 
 
 def apply_hum_notch(
@@ -118,7 +169,7 @@ def spectral_subtraction_denoise(
     return denoised_channels[0]
 
 
-class DenoiseProcessor(BaseEnhancementProcessor):
+class DenoiseProcessor(BaseProcessor):
     """Audio denoising processor targeting hiss, electrical hum, fan drone, and background noise."""
 
     metadata = ProcessorMetadata(
@@ -129,6 +180,81 @@ class DenoiseProcessor(BaseEnhancementProcessor):
         category="Restoration",
         tags=["denoise", "hiss", "hum", "noise-reduction"],
     )
+    processing_mode = ProcessingMode.FILE
+
+    def __init__(
+        self,
+        engine: AudioEngine | None = None,
+        exporter: ExportEngine | None = None,
+        ffmpeg_bin: str | None = None,
+    ) -> None:
+        app_config = AppConfig()
+        self._ffmpeg_bin = ffmpeg_bin or app_config.ffmpeg_path
+        self._engine = engine or AudioEngine(ffmpeg_bin=self._ffmpeg_bin)
+        self._exporter = exporter or ExportEngine(ffmpeg_bin=self._ffmpeg_bin)
+
+    def process_file(
+        self,
+        input_path: Path,
+        output_dir: Path,
+        options: dict[str, Any],
+        on_progress: Callable[[float, str], None] | None = None,
+        cancel_flag: threading.Event | None = None,
+    ) -> Path:
+        """Process a single file: load, run denoising, and save."""
+        if cancel_flag and cancel_flag.is_set():
+            return input_path
+
+        if on_progress:
+            on_progress(0.05, f"Loading {input_path.name}...")
+
+        buffer = AudioBuffer.load(input_path, ffmpeg_bin=self._ffmpeg_bin)
+        samples = buffer.samples
+        sr = buffer.sample_rate
+        channels = buffer.channels
+
+        if cancel_flag and cancel_flag.is_set():
+            return input_path
+
+        if on_progress:
+            on_progress(0.15, "Applying noise reduction...")
+
+        processed_samples = self.enhance(
+            audio=samples,
+            sr=sr,
+            options=options,
+            on_progress=on_progress,
+            cancel_flag=cancel_flag,
+        )
+
+        if cancel_flag and cancel_flag.is_set():
+            return input_path
+
+        if on_progress:
+            on_progress(0.90, "Exporting denoised audio...")
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        suffix = input_path.suffix.lower() if input_path.suffix.lower() in [".wav", ".mp3", ".flac"] else ".wav"
+        base_name = f"{input_path.stem}_{self.metadata.id}"
+        out_path = output_dir / f"{base_name}{suffix}"
+        counter = 1
+        while out_path.exists():
+            out_path = output_dir / f"{base_name}_{counter}{suffix}"
+            counter += 1
+
+        if processed_samples.ndim == 1 and channels > 1:
+            processed_samples = np.repeat(processed_samples[:, np.newaxis], channels, axis=1)
+
+        out_buffer = AudioBuffer(
+            samples=processed_samples.astype(np.float32),
+            sample_rate=sr,
+            channels=channels if processed_samples.ndim > 1 else 1,
+        )
+        exported = out_buffer.save(out_path, ffmpeg_bin=self._ffmpeg_bin)
+        if on_progress:
+            on_progress(1.0, f"Completed: {exported.name}")
+        return exported
 
     @classmethod
     def get_parameter_descriptors(cls) -> list[ParameterDescriptor]:
@@ -174,14 +300,24 @@ class DenoiseProcessor(BaseEnhancementProcessor):
         processed = audio.copy()
 
         # Step 1: Handle ground hum
-        if noise_type in ["hum_50hz", "hum_60hz"] or noise_type == "auto":
-            fund = 50.0 if noise_type == "hum_50hz" else 60.0
+        if noise_type == "hum_50hz":
+            fund = 50.0
             if on_progress:
-                on_progress(0.25, f"Filtering electrical hum ({fund:.0f}Hz)...")
+                on_progress(0.25, f"Filtering electrical hum (50Hz)...")
             processed = apply_hum_notch(processed, sr=sr, fundamental=fund)
-
-        if noise_type in ["hum_50hz", "hum_60hz"]:
             return processed.astype(np.float32)
+        elif noise_type == "hum_60hz":
+            fund = 60.0
+            if on_progress:
+                on_progress(0.25, f"Filtering electrical hum (60Hz)...")
+            processed = apply_hum_notch(processed, sr=sr, fundamental=fund)
+            return processed.astype(np.float32)
+        elif noise_type == "auto":
+            detected_fund = detect_hum_fundamental(processed, sr=sr)
+            if detected_fund:
+                if on_progress:
+                    on_progress(0.25, f"Detected & filtering electrical hum ({detected_fund:.0f}Hz)...")
+                processed = apply_hum_notch(processed, sr=sr, fundamental=detected_fund)
 
         if cancel_flag and cancel_flag.is_set():
             return audio

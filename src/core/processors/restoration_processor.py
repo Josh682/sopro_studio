@@ -10,11 +10,18 @@ import numpy as np
 from scipy import signal
 from scipy.interpolate import CubicSpline
 
+from src.core.audio_engine import AudioBuffer, AudioEngine
+from src.core.exporter import ExportEngine
 from src.core.processor_registry import ProcessorRegistry
-from src.core.processors.base_enhancement_processor import BaseEnhancementProcessor
-from src.core.processors.base_processor import ParameterDescriptor, ProcessorMetadata
+from src.core.processors.base_processor import (
+    BaseProcessor,
+    ParameterDescriptor,
+    ProcessingMode,
+    ProcessorMetadata,
+)
 from src.core.processors.declip_processor import repair_clipping_spline
 from src.core.processors.denoise_processor import spectral_subtraction_denoise
+from src.utils.config import AppConfig
 
 log = logging.getLogger("sound_processor.core.processors.restoration")
 
@@ -41,7 +48,7 @@ def declick_audio(audio: np.ndarray, sr: int, strength: float = 0.5, preserve_tr
 
     for ch in range(channels):
         x = audio[:, ch] if is_stereo else audio
-        residual = signal.filtfilt(b, a, x)
+        residual = signal.filtfilt(b, a, x, padtype="even")
 
         # Click detection threshold based on Median Absolute Deviation (MAD)
         med = np.median(residual)
@@ -61,11 +68,10 @@ def declick_audio(audio: np.ndarray, sr: int, strength: float = 0.5, preserve_tr
         starts = np.where(np.diff(click_mask.astype(int)) == 1)[0] + 1
         ends = np.where(np.diff(click_mask.astype(int)) == -1)[0] + 1
 
-        if len(starts) > 0 and len(ends) > 0:
-            if starts[0] > ends[0]:
-                starts = np.insert(starts, 0, 0)
-            if len(starts) > len(ends):
-                ends = np.append(ends, len(x))
+        if click_mask[0]:
+            starts = np.insert(starts, 0, 0)
+        if click_mask[-1]:
+            ends = np.append(ends, len(x))
 
         repaired_x = x.copy()
         for s, e in zip(starts, ends):
@@ -107,11 +113,10 @@ def inpaint_dropouts(audio: np.ndarray, sr: int, max_gap_ms: float = 40.0) -> np
         starts = np.where(np.diff(is_zero.astype(int)) == 1)[0] + 1
         ends = np.where(np.diff(is_zero.astype(int)) == -1)[0] + 1
 
-        if len(starts) > 0 and len(ends) > 0:
-            if starts[0] > ends[0]:
-                starts = np.insert(starts, 0, 0)
-            if len(starts) > len(ends):
-                ends = np.append(ends, len(x))
+        if is_zero[0]:
+            starts = np.insert(starts, 0, 0)
+        if is_zero[-1]:
+            ends = np.append(ends, len(x))
 
         repaired_x = x.copy()
         for s, e in zip(starts, ends):
@@ -132,7 +137,7 @@ def inpaint_dropouts(audio: np.ndarray, sr: int, max_gap_ms: float = 40.0) -> np
     return repaired_channels[0]
 
 
-class AudioRestorationProcessor(BaseEnhancementProcessor):
+class AudioRestorationProcessor(BaseProcessor):
     """Multi-stage audio restoration pipeline for repairing damaged, clipped, or archival recordings."""
 
     metadata = ProcessorMetadata(
@@ -143,6 +148,81 @@ class AudioRestorationProcessor(BaseEnhancementProcessor):
         category="Restoration",
         tags=["restoration", "repair", "vinyl", "tape", "dropout", "declick"],
     )
+    processing_mode = ProcessingMode.FILE
+
+    def __init__(
+        self,
+        engine: AudioEngine | None = None,
+        exporter: ExportEngine | None = None,
+        ffmpeg_bin: str | None = None,
+    ) -> None:
+        app_config = AppConfig()
+        self._ffmpeg_bin = ffmpeg_bin or app_config.ffmpeg_path
+        self._engine = engine or AudioEngine(ffmpeg_bin=self._ffmpeg_bin)
+        self._exporter = exporter or ExportEngine(ffmpeg_bin=self._ffmpeg_bin)
+
+    def process_file(
+        self,
+        input_path: Path,
+        output_dir: Path,
+        options: dict[str, Any],
+        on_progress: Callable[[float, str], None] | None = None,
+        cancel_flag: threading.Event | None = None,
+    ) -> Path:
+        """Process a single file: load, run restoration pipeline, and save."""
+        if cancel_flag and cancel_flag.is_set():
+            return input_path
+
+        if on_progress:
+            on_progress(0.05, f"Loading {input_path.name}...")
+
+        buffer = AudioBuffer.load(input_path, ffmpeg_bin=self._ffmpeg_bin)
+        samples = buffer.samples
+        sr = buffer.sample_rate
+        channels = buffer.channels
+
+        if cancel_flag and cancel_flag.is_set():
+            return input_path
+
+        if on_progress:
+            on_progress(0.15, "Applying multi-stage restoration...")
+
+        processed_samples = self.enhance(
+            audio=samples,
+            sr=sr,
+            options=options,
+            on_progress=on_progress,
+            cancel_flag=cancel_flag,
+        )
+
+        if cancel_flag and cancel_flag.is_set():
+            return input_path
+
+        if on_progress:
+            on_progress(0.90, "Exporting restored audio...")
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        suffix = input_path.suffix.lower() if input_path.suffix.lower() in [".wav", ".mp3", ".flac"] else ".wav"
+        base_name = f"{input_path.stem}_{self.metadata.id}"
+        out_path = output_dir / f"{base_name}{suffix}"
+        counter = 1
+        while out_path.exists():
+            out_path = output_dir / f"{base_name}_{counter}{suffix}"
+            counter += 1
+
+        if processed_samples.ndim == 1 and channels > 1:
+            processed_samples = np.repeat(processed_samples[:, np.newaxis], channels, axis=1)
+
+        out_buffer = AudioBuffer(
+            samples=processed_samples.astype(np.float32),
+            sample_rate=sr,
+            channels=channels if processed_samples.ndim > 1 else 1,
+        )
+        exported = out_buffer.save(out_path, ffmpeg_bin=self._ffmpeg_bin)
+        if on_progress:
+            on_progress(1.0, f"Completed: {exported.name}")
+        return exported
 
     @classmethod
     def get_parameter_descriptors(cls) -> list[ParameterDescriptor]:
@@ -214,9 +294,8 @@ class AudioRestorationProcessor(BaseEnhancementProcessor):
             if cancel_flag and cancel_flag.is_set():
                 return audio
             if processed.ndim == 2:
-                ch0 = repair_clipping_spline(processed[:, 0])
-                ch1 = repair_clipping_spline(processed[:, 1])
-                processed = np.column_stack([ch0, ch1])
+                repaired_chs = [repair_clipping_spline(processed[:, ch]) for ch in range(processed.shape[1])]
+                processed = np.column_stack(repaired_chs)
             else:
                 processed = repair_clipping_spline(processed)
 
