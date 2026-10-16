@@ -1,6 +1,6 @@
-# DESIGN.md — Audio Quick Toolkit (Analog Console Edition)
+# DESIGN.md — Umbra (Analog Console Edition)
 
-> Dokumen spesifikasi aturan visual, UX, arsitektur komponen, layout, dan interaksi untuk Audio Quick Toolkit. Dokumen ini mengikat implementasi desktop Python (PySide6 / Qt 6.6+) berbasis arsitektur *Analog Studio Mixer & Hardware Console*.
+> Dokumen spesifikasi aturan visual, UX, arsitektur komponen, layout, dan interaksi untuk Umbra. Dokumen ini mengikat implementasi desktop Python (PySide6 / Qt 6.6+) berbasis arsitektur *Analog Studio Mixer & Hardware Console*.
 
 ---
 
@@ -403,6 +403,15 @@ Tombol pemilih file manual di baris header kartu (kanan), tersedia di semua 9 mo
 * [ ] Tombol kotak backlit memancarkan pendaran halo amber saat aktif dan tertekan $2\text{ px}$ ke bawah.
 * [ ] Jarum analog VU meter dan LED ladder terhubung ke buffer audio kalkulasi NumPy.
 * [ ] Shortcut `Esc` berfungsi mengembalikan navigasi ke konsol utama.
+
+### Status Migrasi Implementasi (Analog Console Edition)
+* [x] **Shell & Chassis:** Jendela $1152 \times 768\text{ px}$ dengan sasis perunggu `#3B2C1E` dan lis kayu *walnut wood cheek* $16\text{ px}$ kiri/kanan (`MainWindow`).
+* [x] **Brand Strip:** Header $44\text{ px}$ dengan logo diamond `◆`, teks sablon gading `#EDE6DC`, versi `#9E9182`, dan LED CoreAudio aktif (`#22C55E`). Traffic lights berada di native macOS title bar.
+* [x] **9 Modular Bronze Plates:** Kartu modul berdimensi presisi $346 \times 216\text{ px}$, radius $4\text{ px}$, warna `#33251A` dengan raised plate bevel dan 4 baut sudut sasis $8\text{ px}$ (`LauncherCard`).
+* [x] **Anatomi Kartu:** Baris deskripsi dieliminasi penuh untuk semua modul. Tag sablon `[MOD-XX] [TAG]`, tombol `Browse` manual (tinggi $18\text{ px}$, radius $6\text{ px}$), judul 15px bold, dan rack area $140\text{ px}$.
+* [x] **Amber Backlit Push-Button:** `TactileButton` dengan lensa amber skeuomorphic (`#3D2813` off, `#F59E0B` lit on click), travel vertikal $+2\text{ px}$, ring metal `#2A2016`, dan radius $6\text{ px}$.
+* [x] **Workspace Template:** 4-Slot Tactical Workspace diselaraskan dengan palet perunggu/walnut (`WorkspacePage`, `InteractiveDeck`).
+* [x] **Analog Hardware Controls (Module Rack Canvas):** Implementasi skeuomorphic hardware vector canvas (`ModuleRackCanvas`) untuk seluruh 9 modul mereproduksi `reference/main_dashboard.jpg` (spun-aluminum rotary knobs, dual/single circular analog VU meters, LED meter ladder, console faders, golden audio waveform displays, pitch shift matrix bars, dan CRT metadata display).
 
 ### Keputusan Terbuka (Open Decisions)
 

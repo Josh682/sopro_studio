@@ -40,6 +40,8 @@ Thumbs.db
 # Project-specific
 models/
 outputs/
+src/outputs/*
+!src/outputs/.gitkeep
 logs/
 *.log
 
@@ -47,6 +49,8 @@ logs/
 .env
 .env.*
 .venv312/
+.venv312.nosync/
+*.nosync/
 dummy.wav
 dummy_out/
 env.txt
@@ -56,3 +60,7 @@ __pycache__/
 *.pyc
 assets/bin/
 test_sine*
+node_modules/
+graphify-out/
+.claude/
+tests/fixtures/tmp_tasks/
