@@ -4,7 +4,10 @@ import logging
 import threading
 from pathlib import Path
 
-from qtpy.QtCore import QThread, Signal
+try:
+    from qtpy.QtCore import QThread, Signal
+except ModuleNotFoundError:
+    from src.ui.qt import QThread, Signal
 
 from src.core.processors.audio_analyzer import AudioAnalyzer
 from src.audio.metadata import AudioInfo

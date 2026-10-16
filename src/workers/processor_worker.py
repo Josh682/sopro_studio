@@ -5,7 +5,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from qtpy.QtCore import QThread
+try:
+    from qtpy.QtCore import QThread
+except ModuleNotFoundError:
+    from src.ui.qt import QThread
 
 from src.core.processors.base_processor import BaseProcessor
 from src.workers.base_worker import WorkerSignals

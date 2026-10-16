@@ -7,7 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from qtpy.QtCore import QThread, Signal
+try:
+    from qtpy.QtCore import QThread, Signal
+except ModuleNotFoundError:
+    from src.ui.qt import QThread, Signal
 
 log = logging.getLogger("sound_processor.workers.waveform_worker")
 

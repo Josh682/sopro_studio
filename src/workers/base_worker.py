@@ -1,6 +1,9 @@
 """Shared worker signals for progress, log, error, and finished."""
 
-from qtpy.QtCore import QObject, Signal
+try:
+    from qtpy.QtCore import QObject, Signal
+except ModuleNotFoundError:
+    from src.ui.qt import QObject, Signal
 
 
 class WorkerSignals(QObject):
