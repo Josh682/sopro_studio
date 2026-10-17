@@ -57,6 +57,11 @@ class AudioBuffer:
         return frames / self.sample_rate if self.sample_rate else 0.0
 
     @property
+    def duration_sec(self) -> float:
+        """Alias for duration in seconds."""
+        return self.duration
+
+    @property
     def num_frames(self) -> int:
         """Number of audio frames."""
         return self.samples.shape[0]
@@ -78,6 +83,7 @@ class AudioBuffer:
         mono: bool = False,
         start_sec: float | None = None,
         duration_sec: float | None = None,
+        max_duration_sec: float | None = None,
         ffmpeg_bin: str | None = None,
     ) -> "AudioBuffer":
         """Decode *path* and return an :class:`AudioBuffer`.
@@ -101,12 +107,13 @@ class AudioBuffer:
 
         path = Path(path)
         bin_path = ffmpeg_bin or _default_ffmpeg_bin()
+        effective_duration = duration_sec if duration_sec is not None else max_duration_sec
         samples, sr = load_audio(
             path=path,
             sample_rate=target_sr,
             mono=mono,
             start_sec=start_sec,
-            duration_sec=duration_sec,
+            duration_sec=effective_duration,
             ffmpeg_bin=bin_path,
         )
         channels = 1 if samples.ndim == 1 else samples.shape[1]

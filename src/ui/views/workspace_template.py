@@ -25,6 +25,7 @@ from src.ui.qt import (
     QFont,
     QFrame,
     QHBoxLayout,
+    QKeyEvent,
     QLabel,
     QMouseEvent,
     QPushButton,
@@ -36,6 +37,8 @@ from src.ui.qt import (
     QWidget,
     Signal,
 )
+
+from src.audio.player import AudioPlayerController
 
 import src.core.processors  # Ensure all processors are registered
 from src.core.processors.base_processor import ParameterDescriptor
@@ -316,6 +319,12 @@ class WorkspacePage(QWidget):
         self._submode: Optional[str] = None
         self._active_processor_id: Optional[str] = None
 
+        # Native Audio Playback Engine
+        self._player = AudioPlayerController(self)
+        self._player.positionChanged.connect(self._on_player_position_changed)
+        self._player.stateChanged.connect(self._on_player_state_changed)
+        self._player.timecodeUpdated.connect(self._on_player_timecode_updated)
+
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -403,11 +412,86 @@ class WorkspacePage(QWidget):
 
         # Deck stage header
         deck_header = QHBoxLayout()
+        deck_header.setSpacing(10)
         self.lbl_deck_title = QLabel("VISUAL STAGE / DECK MONITOR", self.slot2_deck)
         self.lbl_deck_title.setFont(TOKENS.typography.create_font("data_mono_sm"))
         self.lbl_deck_title.setStyleSheet(f"color: {TOKENS.colors.text.muted}; background: transparent; border: none;")
         deck_header.addWidget(self.lbl_deck_title)
+
         deck_header.addStretch()
+
+        # Slot 2 Deck Transport Bar Controls
+        transport_container = QFrame(self.slot2_deck)
+        transport_container.setStyleSheet("background: transparent; border: none;")
+        tb_layout = QHBoxLayout(transport_container)
+        tb_layout.setContentsMargins(0, 0, 0, 0)
+        tb_layout.setSpacing(4)
+
+        transport_btn_style = (
+            f"QPushButton {{"
+            f"  background-color: {TOKENS.colors.background.surface_card};"
+            f"  color: {TOKENS.colors.text.primary};"
+            f"  border: 1px solid {TOKENS.colors.border.card};"
+            f"  border-radius: 4px;"
+            f"  font-size: 11px;"
+            f"  font-weight: bold;"
+            f"  padding: 2px 8px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: {TOKENS.colors.background.surface_card_hover};"
+            f"  border-color: #F59E0B;"
+            f"  color: #F59E0B;"
+            f"}}"
+            f"QPushButton:checked {{"
+            f"  background-color: #2D1E10;"
+            f"  border-color: #F59E0B;"
+            f"  color: #F59E0B;"
+            f"}}"
+            f"QPushButton:pressed {{"
+            f"  background-color: #120E0B;"
+            f"}}"
+        )
+
+        self.btn_transport_play = QPushButton("▶", transport_container)
+        self.btn_transport_play.setFixedSize(30, 22)
+        self.btn_transport_play.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_transport_play.setToolTip("Play / Pause (Spacebar)")
+        self.btn_transport_play.setStyleSheet(transport_btn_style)
+        self.btn_transport_play.clicked.connect(self._toggle_playback)
+        tb_layout.addWidget(self.btn_transport_play)
+
+        self.btn_transport_stop = QPushButton("■", transport_container)
+        self.btn_transport_stop.setFixedSize(26, 22)
+        self.btn_transport_stop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_transport_stop.setToolTip("Stop & Rewind")
+        self.btn_transport_stop.setStyleSheet(transport_btn_style)
+        self.btn_transport_stop.clicked.connect(self._stop_playback)
+        tb_layout.addWidget(self.btn_transport_stop)
+
+        self.btn_transport_loop = QPushButton("🔁", transport_container)
+        self.btn_transport_loop.setFixedSize(28, 22)
+        self.btn_transport_loop.setCheckable(True)
+        self.btn_transport_loop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_transport_loop.setToolTip("Toggle Selection Looping")
+        self.btn_transport_loop.setStyleSheet(transport_btn_style)
+        self.btn_transport_loop.clicked.connect(self._toggle_loop)
+        tb_layout.addWidget(self.btn_transport_loop)
+
+        tb_layout.addSpacing(4)
+
+        self.lbl_timecode = QLabel("00:00.00 / 00:00.00", transport_container)
+        self.lbl_timecode.setFont(TOKENS.typography.create_font("data_mono_sm"))
+        self.lbl_timecode.setStyleSheet(
+            f"color: {TOKENS.colors.text.display_readout};"
+            f"background-color: {TOKENS.colors.background.surface_display_glass};"
+            f"border: 1px solid rgba(255, 255, 255, 0.08);"
+            f"border-radius: 3px;"
+            f"padding: 2px 8px;"
+        )
+        tb_layout.addWidget(self.lbl_timecode)
+
+        deck_header.addWidget(transport_container)
+        deck_header.addSpacing(8)
 
         self.lbl_deck_badge = QLabel("READY", self.slot2_deck)
         self.lbl_deck_badge.setFont(TOKENS.typography.create_font("data_mono_sm"))
@@ -607,9 +691,17 @@ class WorkspacePage(QWidget):
         self._current_files = [file_path]
         self._update_file_display()
 
+        # Load into audio transport player
+        self._player.load(file_path)
+
         if self._custom_stage_widget is not None:
             if isinstance(self._custom_stage_widget, WaveformStage):
                 self._custom_stage_widget.load_audio_preview(file_path)
+                self._player.set_loop(
+                    self.btn_transport_loop.isChecked(),
+                    self._custom_stage_widget._start_sec,
+                    self._custom_stage_widget._end_sec,
+                )
             self.deck_stack.setCurrentIndex(1)
 
         self.file_selected.emit(self._current_module_id, file_path)
@@ -622,9 +714,17 @@ class WorkspacePage(QWidget):
         self._current_file = file_paths[0]
         self._update_file_display()
 
+        # Load primary track into audio transport player
+        self._player.load(self._current_file)
+
         if self._custom_stage_widget is not None:
             if isinstance(self._custom_stage_widget, WaveformStage):
                 self._custom_stage_widget.load_audio_preview(self._current_file)
+                self._player.set_loop(
+                    self.btn_transport_loop.isChecked(),
+                    self._custom_stage_widget._start_sec,
+                    self._custom_stage_widget._end_sec,
+                )
             self.deck_stack.setCurrentIndex(1)
 
         self.files_selected.emit(self._current_module_id, self._current_files)
@@ -632,6 +732,7 @@ class WorkspacePage(QWidget):
 
     def reset_file_and_params(self) -> None:
         """Reset loaded audio file and restore defaults."""
+        self._player.stop()
         if self._current_task is not None and self._current_task.is_running:
             self._current_task.cancel()
         if self._worker is not None and hasattr(self._worker, "cancel"):
@@ -640,6 +741,7 @@ class WorkspacePage(QWidget):
         self._current_files.clear()
         self._rack_controller.reset_to_defaults()
         self._update_file_display()
+        self.lbl_timecode.setText("00:00.00 / 00:00.00")
         self.deck_stack.setCurrentIndex(0)
 
     def _update_file_display(self) -> None:
@@ -849,6 +951,12 @@ class WorkspacePage(QWidget):
                 if self._current_file:
                     new_stage.load_audio_preview(self._current_file)
                 new_stage.rangeChanged.connect(self._on_waveform_range_changed)
+                new_stage.seekRequested.connect(self._player.seek)
+                self._player.set_loop(
+                    self.btn_transport_loop.isChecked(),
+                    new_stage._start_sec,
+                    new_stage._end_sec,
+                )
 
             if self._current_file or self._current_files:
                 self.deck_stack.setCurrentIndex(1)
@@ -858,17 +966,19 @@ class WorkspacePage(QWidget):
             self.deck_stack.setCurrentIndex(0)
 
     def _on_waveform_range_changed(self, start_sec: float, end_sec: float) -> None:
-        """Sync WaveformStage range markers with trimmer controls in Slot 3."""
+        """Sync WaveformStage range markers with trimmer controls in Slot 3 and player loop."""
         for name, widget in self._rack_controller.controls.items():
             if name == "start_sec" and hasattr(widget, "setValue"):
                 widget.setValue(start_sec)
             elif name == "end_sec" and hasattr(widget, "setValue"):
                 widget.setValue(end_sec)
+        self._player.set_loop(self.btn_transport_loop.isChecked(), start_sec, end_sec)
 
     # --- Module Configuration ---
 
     def configure_module(self, module_info: Dict[str, Any], file_path: Optional[str] = None) -> None:
         """Inject module configuration into the 4-slot workspace."""
+        self._player.stop()
         self._current_module_info = module_info
         self._current_module_id = module_info.get("id", "converter")
         self._submode = None
@@ -891,6 +1001,7 @@ class WorkspacePage(QWidget):
         if file_path:
             self._current_file = file_path
             self._current_files = [file_path]
+            self._player.load(file_path)
         else:
             self._current_file = None
             self._current_files = []
@@ -908,6 +1019,78 @@ class WorkspacePage(QWidget):
         self.btn_action_cta.setText(action_text)
         self.btn_action_cta.set_accent_key(accent_key)
         self.btn_action_cta.setEnabled(True)
+
+    # --- Transport & Audio Playback ---
+
+    def _toggle_playback(self) -> None:
+        """Toggle audio playback."""
+        if not self._current_file:
+            return
+        self._player.toggle_play_pause()
+
+    def _stop_playback(self) -> None:
+        """Stop playback and rewind to start or loop start."""
+        self._player.stop()
+
+    def _toggle_loop(self) -> None:
+        """Toggle loop playback mode."""
+        start = 0.0
+        end = 0.0
+        if isinstance(self._custom_stage_widget, WaveformStage):
+            start = self._custom_stage_widget._start_sec
+            end = self._custom_stage_widget._end_sec
+        self._player.set_loop(self.btn_transport_loop.isChecked(), start, end)
+
+    def _on_player_position_changed(self, pos_sec: float) -> None:
+        """Update WaveformStage playhead cursor on 60 FPS tick."""
+        if isinstance(self._custom_stage_widget, WaveformStage):
+            self._custom_stage_widget.set_playhead(pos_sec)
+
+    def _on_player_state_changed(self, state: str) -> None:
+        """Update transport play button icon on state change."""
+        if state == "playing":
+            self.btn_transport_play.setText("❚❚")
+            self.btn_transport_play.setStyleSheet(
+                f"QPushButton {{"
+                f"  background-color: #2D1E10;"
+                f"  color: #F59E0B;"
+                f"  border: 1px solid #F59E0B;"
+                f"  border-radius: 4px;"
+                f"  font-size: 11px;"
+                f"  font-weight: bold;"
+                f"  padding: 2px 8px;"
+                f"}}"
+            )
+        else:
+            self.btn_transport_play.setText("▶")
+            self.btn_transport_play.setStyleSheet(
+                f"QPushButton {{"
+                f"  background-color: {TOKENS.colors.background.surface_card};"
+                f"  color: {TOKENS.colors.text.primary};"
+                f"  border: 1px solid {TOKENS.colors.border.card};"
+                f"  border-radius: 4px;"
+                f"  font-size: 11px;"
+                f"  font-weight: bold;"
+                f"  padding: 2px 8px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  background-color: {TOKENS.colors.background.surface_card_hover};"
+                f"  border-color: #F59E0B;"
+                f"  color: #F59E0B;"
+                f"}}"
+            )
+
+    def _on_player_timecode_updated(self, cur_str: str, dur_str: str) -> None:
+        """Update digital timecode LCD readout."""
+        self.lbl_timecode.setText(f"{cur_str} / {dur_str}")
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Handle workspace keyboard shortcuts (Spacebar toggles play/pause)."""
+        if event.key() == Qt.Key.Key_Space:
+            self._toggle_playback()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     # --- DSP Execution & Worker Integration ---
 

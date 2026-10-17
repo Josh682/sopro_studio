@@ -11,6 +11,7 @@ from src.audio.loader import LoadError, load_audio
 from src.audio.metadata import AudioInfo, ProbeError, probe
 from src.audio.writer import WriteError, write_audio, write_flac, write_mp3, write_wav
 from src.audio.dsp import process_in_chunks
+from src.audio.player import AudioPlayerController, format_timecode
 
 __all__ = [
     # loader
@@ -28,4 +29,7 @@ __all__ = [
     "WriteError",
     # dsp
     "process_in_chunks",
+    # player
+    "AudioPlayerController",
+    "format_timecode",
 ]

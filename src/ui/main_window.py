@@ -276,16 +276,22 @@ class MainWindow(QMainWindow):
     def navigate_to_launcher(self) -> None:
         """Return to Modular Hardware Grid Launcher (Index 0)."""
         log.info("Returning to Launcher grid.")
+        if hasattr(self, "page_workspace") and hasattr(self.page_workspace, "_player"):
+            self.page_workspace._player.stop()
         self.stack.setCurrentIndex(0)
 
     # --- Global Keyboard Shortcuts ---
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        """Handle global keyboard shortcuts (Esc returns to Launcher)."""
+        """Handle global keyboard shortcuts (Esc returns to Launcher, Space toggles playback)."""
         if event.key() == Qt.Key.Key_Escape:
             if self.stack.currentIndex() != 0:
                 self.navigate_to_launcher()
                 event.accept()
+                return
+        elif event.key() == Qt.Key.Key_Space and self.stack.currentIndex() == 1:
+            self.page_workspace.keyPressEvent(event)
+            if event.isAccepted():
                 return
 
         super().keyPressEvent(event)

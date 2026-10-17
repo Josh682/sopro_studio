@@ -86,6 +86,7 @@ try:
         QVBoxLayout,
         QWidget,
     )
+    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
     QT_BINDING = "PySide6"
     QT_VERSION = PySide6.__version__
@@ -145,6 +146,7 @@ except ImportError:
             QVBoxLayout,
             QWidget,
         )
+        from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 
         QT_BINDING = "PyQt6"
         QT_VERSION = PyQt6.QtCore.PYQT_VERSION_STR
@@ -215,6 +217,8 @@ __all__ = [
     "QGridLayout",
     "QSizePolicy",
     "QSpacerItem",
+    "QMediaPlayer",
+    "QAudioOutput",
     "QT_BINDING",
     "QT_VERSION",
 ]
