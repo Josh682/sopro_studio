@@ -47,6 +47,21 @@ class ModuleRackCanvas(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._is_hovered = False
 
+        # Dynamic needle angles for [MOD-04] and [MOD-08]
+        self._needle_deg_l: float = -20.0
+        self._needle_deg_r: float = -8.0
+        self._needle_deg_norm: float = -10.0
+
+    def set_meter_angles(self, needle_l: float, needle_r: Optional[float] = None) -> None:
+        """Update needle deflection angles for analog VU meters."""
+        self._needle_deg_l = max(-40.0, min(42.0, float(needle_l)))
+        self._needle_deg_norm = self._needle_deg_l
+        if needle_r is not None:
+            self._needle_deg_r = max(-40.0, min(42.0, float(needle_r)))
+        else:
+            self._needle_deg_r = self._needle_deg_l
+        self.update()
+
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             p = self.parent()
@@ -517,9 +532,9 @@ class ModuleRackCanvas(QWidget):
         """[MOD-04] Dual Circular VU Meters + Stacked BPM & Key Readout Boxes - grounded lower."""
         # Dual VU Meters
         cy = 104.0
-        self._draw_vu_meter(p, 58.0, cy, radius=38.0, needle_deg=-20.0, title="UA")
+        self._draw_vu_meter(p, 58.0, cy, radius=38.0, needle_deg=self._needle_deg_l, title="UA")
         self._draw_led(p, 110.0, cy - 4.0, "#F59E0B")
-        self._draw_vu_meter(p, 162.0, cy, radius=38.0, needle_deg=-8.0, title="UA")
+        self._draw_vu_meter(p, 162.0, cy, radius=38.0, needle_deg=self._needle_deg_r, title="UA")
 
         # Stacked Readouts
         self._draw_readout_box(p, 226.0, 64.0, 56.0, 24.0, "BPM", caption="BPM")
@@ -621,7 +636,7 @@ class ModuleRackCanvas(QWidget):
         self._draw_button(p, 22.0, 108.0, size=36.0, label="MUTE", is_lit=True)
 
         # Center Large Circular VU Meter (grounded lower)
-        self._draw_vu_meter(p, 156.0, 102.0, radius=44.0, needle_deg=-10.0, title="VU")
+        self._draw_vu_meter(p, 156.0, 102.0, radius=44.0, needle_deg=self._needle_deg_norm, title="VU")
 
         # Right LUFS Box
         p.setFont(QFont("Helvetica Neue", 8, QFont.Weight.Bold))

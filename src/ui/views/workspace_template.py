@@ -325,6 +325,13 @@ class WorkspacePage(QWidget):
         self._player.stateChanged.connect(self._on_player_state_changed)
         self._player.timecodeUpdated.connect(self._on_player_timecode_updated)
 
+        # Real-time Ballistic Audio Metering Engine
+        from src.audio.metering import AudioMeterEngine
+        self._meter_engine = AudioMeterEngine(self)
+        self._meter_engine.levelsUpdated.connect(self._on_meter_levels_updated)
+        self._meter_engine.ballisticsUpdated.connect(self._on_meter_ballistics_updated)
+        self._meter_engine.clipDetected.connect(self._on_meter_clip_detected)
+
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -489,6 +496,27 @@ class WorkspacePage(QWidget):
             f"padding: 2px 8px;"
         )
         tb_layout.addWidget(self.lbl_timecode)
+
+        # Telemetry RMS level & Peak Overload Indicator
+        self.lbl_meter_level = QLabel("-∞ dB", transport_container)
+        self.lbl_meter_level.setFont(TOKENS.typography.create_font("data_mono_sm"))
+        self.lbl_meter_level.setToolTip("Live RMS Audio Level")
+        self.lbl_meter_level.setStyleSheet(
+            f"color: {TOKENS.colors.text.muted};"
+            f"background-color: {TOKENS.colors.background.surface_display_glass};"
+            f"border: 1px solid rgba(255, 255, 255, 0.08);"
+            f"border-radius: 3px;"
+            f"padding: 2px 6px;"
+        )
+        tb_layout.addWidget(self.lbl_meter_level)
+
+        self.lbl_peak_led = QLabel("PK", transport_container)
+        self.lbl_peak_led.setFont(TOKENS.typography.create_font("data_mono_sm"))
+        self.lbl_peak_led.setToolTip("Peak Overload Clip Indicator (> -0.1 dBFS)")
+        self.lbl_peak_led.setStyleSheet(
+            "color: #4A1A1A; background-color: #1A0D0D; border: 1px solid #3A1414; border-radius: 3px; padding: 2px 5px;"
+        )
+        tb_layout.addWidget(self.lbl_peak_led)
 
         deck_header.addWidget(transport_container)
         deck_header.addSpacing(8)
@@ -691,8 +719,9 @@ class WorkspacePage(QWidget):
         self._current_files = [file_path]
         self._update_file_display()
 
-        # Load into audio transport player
+        # Load into audio transport player & metering engine
         self._player.load(file_path)
+        self._meter_engine.load_file(file_path)
 
         if self._custom_stage_widget is not None:
             if isinstance(self._custom_stage_widget, WaveformStage):
@@ -714,8 +743,9 @@ class WorkspacePage(QWidget):
         self._current_file = file_paths[0]
         self._update_file_display()
 
-        # Load primary track into audio transport player
+        # Load primary track into audio transport player & metering engine
         self._player.load(self._current_file)
+        self._meter_engine.load_file(self._current_file)
 
         if self._custom_stage_widget is not None:
             if isinstance(self._custom_stage_widget, WaveformStage):
@@ -733,6 +763,7 @@ class WorkspacePage(QWidget):
     def reset_file_and_params(self) -> None:
         """Reset loaded audio file and restore defaults."""
         self._player.stop()
+        self._meter_engine.reset()
         if self._current_task is not None and self._current_task.is_running:
             self._current_task.cancel()
         if self._worker is not None and hasattr(self._worker, "cancel"):
@@ -742,6 +773,10 @@ class WorkspacePage(QWidget):
         self._rack_controller.reset_to_defaults()
         self._update_file_display()
         self.lbl_timecode.setText("00:00.00 / 00:00.00")
+        self.lbl_meter_level.setText("-∞ dB")
+        self.lbl_peak_led.setStyleSheet(
+            "color: #4A1A1A; background-color: #1A0D0D; border: 1px solid #3A1414; border-radius: 3px; padding: 2px 5px;"
+        )
         self.deck_stack.setCurrentIndex(0)
 
     def _update_file_display(self) -> None:
@@ -1002,6 +1037,7 @@ class WorkspacePage(QWidget):
             self._current_file = file_path
             self._current_files = [file_path]
             self._player.load(file_path)
+            self._meter_engine.load_file(file_path)
         else:
             self._current_file = None
             self._current_files = []
@@ -1031,6 +1067,7 @@ class WorkspacePage(QWidget):
     def _stop_playback(self) -> None:
         """Stop playback and rewind to start or loop start."""
         self._player.stop()
+        self._meter_engine.reset()
 
     def _toggle_loop(self) -> None:
         """Toggle loop playback mode."""
@@ -1042,9 +1079,56 @@ class WorkspacePage(QWidget):
         self._player.set_loop(self.btn_transport_loop.isChecked(), start, end)
 
     def _on_player_position_changed(self, pos_sec: float) -> None:
-        """Update WaveformStage playhead cursor on 60 FPS tick."""
+        """Update WaveformStage playhead cursor and meter engine on 60 FPS tick."""
         if isinstance(self._custom_stage_widget, WaveformStage):
             self._custom_stage_widget.set_playhead(pos_sec)
+        self._meter_engine.process_playhead(pos_sec)
+
+    def _on_meter_levels_updated(self, rms_l: float, rms_r: float, peak_l: float, peak_r: float) -> None:
+        """Update live RMS telemetry display in Slot 2 Deck Header."""
+        max_rms = max(rms_l, rms_r)
+        if max_rms <= -70.0:
+            self.lbl_meter_level.setText("-∞ dB")
+            self.lbl_meter_level.setStyleSheet(
+                f"color: {TOKENS.colors.text.muted};"
+                f"background-color: {TOKENS.colors.background.surface_display_glass};"
+                f"border: 1px solid rgba(255, 255, 255, 0.08);"
+                f"border-radius: 3px;"
+                f"padding: 2px 6px;"
+            )
+        else:
+            self.lbl_meter_level.setText(f"{max_rms:.1f} dB")
+            color = "#EF4444" if max_rms > -3.0 else ("#F59E0B" if max_rms > -12.0 else "#22C55E")
+            self.lbl_meter_level.setStyleSheet(
+                f"color: {color};"
+                f"background-color: {TOKENS.colors.background.surface_display_glass};"
+                f"border: 1px solid rgba(255, 255, 255, 0.08);"
+                f"border-radius: 3px;"
+                f"padding: 2px 6px;"
+            )
+
+        if self._custom_stage_widget is not None and hasattr(self._custom_stage_widget, "set_levels"):
+            self._custom_stage_widget.set_levels(rms_l, rms_r)
+
+    def _on_meter_ballistics_updated(self, ang_l: float, ang_r: float) -> None:
+        """Forward physical galvanometer needle angles to custom stage."""
+        if self._custom_stage_widget is not None and hasattr(self._custom_stage_widget, "set_angles"):
+            self._custom_stage_widget.set_angles(ang_l, ang_r)
+
+    def _on_meter_clip_detected(self, clip_l: bool, clip_r: bool) -> None:
+        """Update peak overload indicator lamps."""
+        is_clipped = clip_l or clip_r
+        if is_clipped:
+            self.lbl_peak_led.setStyleSheet(
+                "color: #FFFFFF; background-color: #EF4444; border: 1px solid #DC2626; border-radius: 3px; padding: 2px 5px; font-weight: bold;"
+            )
+        else:
+            self.lbl_peak_led.setStyleSheet(
+                "color: #4A1A1A; background-color: #1A0D0D; border: 1px solid #3A1414; border-radius: 3px; padding: 2px 5px;"
+            )
+
+        if self._custom_stage_widget is not None and hasattr(self._custom_stage_widget, "set_clipped"):
+            self._custom_stage_widget.set_clipped(clip_l, clip_r)
 
     def _on_player_state_changed(self, state: str) -> None:
         """Update transport play button icon on state change."""
