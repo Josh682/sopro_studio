@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -139,3 +141,34 @@ def stem_with_suffix(path: Path, new_suffix: str) -> str:
         'song.wav'
     """
     return f"{path.stem}{new_suffix}"
+
+
+def reveal_in_file_manager(path: Path | str) -> bool:
+    """Reveal *path* in the platform's default file manager.
+
+    - macOS: ``open -R <path>``
+    - Windows: ``explorer /select,<path>``
+    - Linux: ``xdg-open <parent_dir>``
+
+    Returns True if the launch command succeeded, False otherwise.
+    """
+    p = Path(path).resolve()
+    if not p.exists():
+        if not p.parent.exists():
+            return False
+        p = p.parent
+
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["open", "-R", str(p)], check=True, capture_output=True)
+            return True
+        elif sys.platform == "win32":
+            subprocess.run(["explorer", f"/select,{str(p)}"], check=True, capture_output=True)
+            return True
+        else:
+            target = str(p) if p.is_dir() else str(p.parent)
+            subprocess.run(["xdg-open", target], check=True, capture_output=True)
+            return True
+    except Exception:
+        return False
+

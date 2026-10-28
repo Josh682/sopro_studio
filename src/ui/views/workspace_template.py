@@ -27,7 +27,9 @@ from src.ui.qt import (
     QHBoxLayout,
     QKeyEvent,
     QLabel,
+    QMenu,
     QMouseEvent,
+    QPoint,
     QPushButton,
     QSizePolicy,
     QSpacerItem,
@@ -43,6 +45,7 @@ from src.audio.player import AudioPlayerController
 import src.core.processors  # Ensure all processors are registered
 from src.core.processors.base_processor import ParameterDescriptor
 from src.core.processor_registry import ProcessorRegistry
+from src.ui.components.batch_queue_drawer import BatchQueueDrawer
 from src.ui.components.custom_stages import (
     AnalysisStage,
     StemDeckStage,
@@ -59,6 +62,7 @@ from src.ui.components.rack_control_factory import DynamicRackController
 from src.ui.theme.tokens import TOKENS, AccentToken
 from src.ui.widgets.tactile_button import TactileButton
 from src.utils.config import AppConfig
+from src.utils.file_utils import reveal_in_file_manager
 from src.workers.processor_worker import ProcessorWorker
 
 log = logging.getLogger("sound_processor.ui.views.workspace_template")
@@ -302,6 +306,7 @@ class WorkspacePage(QWidget):
     back_requested = Signal()
     file_selected = Signal(str, str)  # (module_id, file_path)
     files_selected = Signal(str, list)  # (module_id, list_of_paths)
+    route_to_module_requested = Signal(str, str)  # (target_module_id, output_path)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -310,6 +315,7 @@ class WorkspacePage(QWidget):
         self._current_module_info: Dict[str, Any] = {}
         self._current_file: Optional[str] = None
         self._current_files: List[str] = []
+        self._last_output_file: Optional[Path] = None
 
         self._rack_controller = DynamicRackController()
         self._task_runner = get_task_runner()
@@ -427,6 +433,58 @@ class WorkspacePage(QWidget):
 
         deck_header.addStretch()
 
+        # View toggle between Queue and Visual Stage (appears when >1 files loaded)
+        self.view_toggle_container = QFrame(self.slot2_deck)
+        self.view_toggle_container.setStyleSheet(
+            f"QFrame {{"
+            f"  background-color: {TOKENS.colors.background.surface_card};"
+            f"  border: 1px solid {TOKENS.colors.border.card};"
+            f"  border-radius: 4px;"
+            f"}}"
+        )
+        vt_layout = QHBoxLayout(self.view_toggle_container)
+        vt_layout.setContentsMargins(2, 2, 2, 2)
+        vt_layout.setSpacing(2)
+
+        toggle_btn_style = (
+            f"QPushButton {{"
+            f"  background-color: transparent;"
+            f"  color: {TOKENS.colors.text.muted};"
+            f"  border: none;"
+            f"  border-radius: 3px;"
+            f"  font-size: 11px;"
+            f"  font-weight: bold;"
+            f"  padding: 2px 8px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  color: {TOKENS.colors.text.primary};"
+            f"  background-color: {TOKENS.colors.background.surface_card_hover};"
+            f"}}"
+            f"QPushButton:checked {{"
+            f"  background-color: #2D1E10;"
+            f"  color: #F59E0B;"
+            f"}}"
+        )
+
+        self.btn_view_queue = QPushButton("≡ QUEUE (0)", self.view_toggle_container)
+        self.btn_view_queue.setCheckable(True)
+        self.btn_view_queue.setChecked(True)
+        self.btn_view_queue.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_view_queue.setStyleSheet(toggle_btn_style)
+        self.btn_view_queue.clicked.connect(self._on_view_queue_clicked)
+        vt_layout.addWidget(self.btn_view_queue)
+
+        self.btn_view_stage = QPushButton("∿ DECK / WAVE", self.view_toggle_container)
+        self.btn_view_stage.setCheckable(True)
+        self.btn_view_stage.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_view_stage.setStyleSheet(toggle_btn_style)
+        self.btn_view_stage.clicked.connect(self._on_view_stage_clicked)
+        vt_layout.addWidget(self.btn_view_stage)
+
+        self.view_toggle_container.setVisible(False)
+        deck_header.addWidget(self.view_toggle_container)
+        deck_header.addSpacing(6)
+
         # Slot 2 Deck Transport Bar Controls
         transport_container = QFrame(self.slot2_deck)
         transport_container.setStyleSheet("background: transparent; border: none;")
@@ -538,6 +596,14 @@ class WorkspacePage(QWidget):
         self.interactive_deck.file_dropped.connect(self.load_file)
         self.deck_stack.addWidget(self.interactive_deck)
 
+        # Batch Processing Queue Drawer
+        self.batch_queue_drawer = BatchQueueDrawer(self.deck_stack)
+        self.batch_queue_drawer.files_reordered.connect(self._on_queue_files_reordered)
+        self.batch_queue_drawer.file_removed.connect(self._on_queue_file_removed)
+        self.batch_queue_drawer.file_selected.connect(self._on_queue_file_selected)
+        self.batch_queue_drawer.add_files_requested.connect(self.open_file_dialog)
+        self.deck_stack.addWidget(self.batch_queue_drawer)
+
         deck_layout.addWidget(self.deck_stack)
         main_layout.addWidget(self.slot2_deck)
 
@@ -632,6 +698,60 @@ class WorkspacePage(QWidget):
 
         footer_layout.addStretch()
 
+        # Post-Processing Hand-off Action Cluster (Revealed upon successful DSP completion)
+        self.handoff_container = QFrame(self.slot4_footer)
+        self.handoff_container.setStyleSheet("background: transparent; border: none;")
+        ho_layout = QHBoxLayout(self.handoff_container)
+        ho_layout.setContentsMargins(0, 0, 0, 0)
+        ho_layout.setSpacing(6)
+
+        handoff_btn_style = (
+            f"QPushButton {{"
+            f"  background-color: #17100B;"
+            f"  color: {TOKENS.colors.text.primary};"
+            f"  border: 1px solid {TOKENS.colors.border.card};"
+            f"  border-radius: 4px;"
+            f"  padding: 0 12px;"
+            f"  font-size: 11px;"
+            f"  font-weight: bold;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: #2D1E10;"
+            f"  border-color: #F59E0B;"
+            f"  color: #F59E0B;"
+            f"}}"
+            f"QPushButton:pressed {{"
+            f"  background-color: #0E0A08;"
+            f"}}"
+        )
+
+        self.btn_reveal_finder = QPushButton("🔍 Reveal in Finder", self.handoff_container)
+        self.btn_reveal_finder.setFixedHeight(38)
+        self.btn_reveal_finder.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_reveal_finder.setToolTip("Reveal output file in system file manager")
+        self.btn_reveal_finder.setStyleSheet(handoff_btn_style)
+        self.btn_reveal_finder.clicked.connect(self._reveal_result_in_finder)
+        ho_layout.addWidget(self.btn_reveal_finder)
+
+        self.btn_play_result = QPushButton("▶ Play Result", self.handoff_container)
+        self.btn_play_result.setFixedHeight(38)
+        self.btn_play_result.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_play_result.setToolTip("Play processed audio output in deck")
+        self.btn_play_result.setStyleSheet(handoff_btn_style)
+        self.btn_play_result.clicked.connect(self._play_result_audio)
+        ho_layout.addWidget(self.btn_play_result)
+
+        self.btn_send_to_module = QPushButton("➔ Send to Module ▾", self.handoff_container)
+        self.btn_send_to_module.setFixedHeight(38)
+        self.btn_send_to_module.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_send_to_module.setToolTip("Route processed output to another module")
+        self.btn_send_to_module.setStyleSheet(handoff_btn_style)
+        self.btn_send_to_module.clicked.connect(self._show_send_to_module_menu)
+        ho_layout.addWidget(self.btn_send_to_module)
+
+        self.handoff_container.setVisible(False)
+        footer_layout.addWidget(self.handoff_container)
+
         # Secondary Button: Reset Defaults / Clear File
         self.btn_reset = QPushButton("Reset Defaults", self.slot4_footer)
         self.btn_reset.setFont(TOKENS.typography.create_font("body_regular"))
@@ -717,6 +837,8 @@ class WorkspacePage(QWidget):
         """Load a single audio file into workspace buffer."""
         self._current_file = file_path
         self._current_files = [file_path]
+        self._last_output_file = None
+        self.handoff_container.setVisible(False)
         self._update_file_display()
 
         # Load into audio transport player & metering engine
@@ -731,7 +853,12 @@ class WorkspacePage(QWidget):
                     self._custom_stage_widget._start_sec,
                     self._custom_stage_widget._end_sec,
                 )
-            self.deck_stack.setCurrentIndex(1)
+            self.deck_stack.setCurrentWidget(self._custom_stage_widget)
+        else:
+            self.deck_stack.setCurrentWidget(self.interactive_deck)
+
+        self.batch_queue_drawer.set_files(self._current_files)
+        self.view_toggle_container.setVisible(False)
 
         self.file_selected.emit(self._current_module_id, file_path)
 
@@ -741,6 +868,8 @@ class WorkspacePage(QWidget):
             return
         self._current_files = list(file_paths)
         self._current_file = file_paths[0]
+        self._last_output_file = None
+        self.handoff_container.setVisible(False)
         self._update_file_display()
 
         # Load primary track into audio transport player & metering engine
@@ -755,7 +884,22 @@ class WorkspacePage(QWidget):
                     self._custom_stage_widget._start_sec,
                     self._custom_stage_widget._end_sec,
                 )
-            self.deck_stack.setCurrentIndex(1)
+
+        # Populate batch queue drawer
+        self.batch_queue_drawer.set_files(self._current_files)
+
+        if len(self._current_files) > 1:
+            self.view_toggle_container.setVisible(True)
+            self.btn_view_queue.setText(f"≡ QUEUE ({len(self._current_files)})")
+            self.btn_view_queue.setChecked(True)
+            self.btn_view_stage.setChecked(False)
+            self.deck_stack.setCurrentWidget(self.batch_queue_drawer)
+        else:
+            self.view_toggle_container.setVisible(False)
+            if self._custom_stage_widget is not None:
+                self.deck_stack.setCurrentWidget(self._custom_stage_widget)
+            else:
+                self.deck_stack.setCurrentWidget(self.interactive_deck)
 
         self.files_selected.emit(self._current_module_id, self._current_files)
         self.file_selected.emit(self._current_module_id, self._current_file)
@@ -770,6 +914,12 @@ class WorkspacePage(QWidget):
             self._worker.cancel()
         self._current_file = None
         self._current_files.clear()
+        self._last_output_file = None
+        self.handoff_container.setVisible(False)
+        self.view_toggle_container.setVisible(False)
+        self.batch_queue_drawer.blockSignals(True)
+        self.batch_queue_drawer.clear()
+        self.batch_queue_drawer.blockSignals(False)
         self._rack_controller.reset_to_defaults()
         self._update_file_display()
         self.lbl_timecode.setText("00:00.00 / 00:00.00")
@@ -777,7 +927,88 @@ class WorkspacePage(QWidget):
         self.lbl_peak_led.setStyleSheet(
             "color: #4A1A1A; background-color: #1A0D0D; border: 1px solid #3A1414; border-radius: 3px; padding: 2px 5px;"
         )
-        self.deck_stack.setCurrentIndex(0)
+        self.deck_stack.setCurrentWidget(self.interactive_deck)
+
+    def _on_view_queue_clicked(self) -> None:
+        """Switch Deck Slot 2 to show Batch Queue Drawer."""
+        self.btn_view_queue.setChecked(True)
+        self.btn_view_stage.setChecked(False)
+        self.deck_stack.setCurrentWidget(self.batch_queue_drawer)
+
+    def _on_view_stage_clicked(self) -> None:
+        """Switch Deck Slot 2 to show visual stage (Waveform, Stems, Analysis) or deck."""
+        self.btn_view_queue.setChecked(False)
+        self.btn_view_stage.setChecked(True)
+        if self._custom_stage_widget is not None:
+            self.deck_stack.setCurrentWidget(self._custom_stage_widget)
+        else:
+            self.deck_stack.setCurrentWidget(self.interactive_deck)
+
+    def _on_queue_files_reordered(self, new_order: List[str]) -> None:
+        """Handle reordering of tracks in batch queue drawer."""
+        if self._current_files == new_order:
+            return
+        self._current_files = list(new_order)
+        if not self._current_files:
+            if self._current_file is not None:
+                self.reset_file_and_params()
+            return
+
+        if self._current_file not in self._current_files:
+            self._current_file = self._current_files[0]
+
+        count = len(self._current_files)
+        self.btn_view_queue.setText(f"≡ QUEUE ({count})")
+        if count <= 1:
+            self.view_toggle_container.setVisible(False)
+
+        self._update_file_display()
+        self.files_selected.emit(self._current_module_id, self._current_files)
+        log.info("Batch queue reordered: %s files", len(self._current_files))
+
+    def _on_queue_file_removed(self, removed_file: str) -> None:
+        """Handle individual file removal from batch queue drawer."""
+        if removed_file in self._current_files:
+            self._current_files.remove(removed_file)
+
+        if not self._current_files:
+            if self._current_file is not None:
+                self.reset_file_and_params()
+            return
+
+        if self._current_file == removed_file:
+            self._current_file = self._current_files[0]
+            self._player.load(self._current_file)
+            self._meter_engine.load_file(self._current_file)
+            if isinstance(self._custom_stage_widget, WaveformStage):
+                self._custom_stage_widget.load_audio_preview(self._current_file)
+
+        count = len(self._current_files)
+        self.btn_view_queue.setText(f"≡ QUEUE ({count})")
+        if count <= 1:
+            self.view_toggle_container.setVisible(False)
+            if self._custom_stage_widget is not None:
+                self.deck_stack.setCurrentWidget(self._custom_stage_widget)
+            else:
+                self.deck_stack.setCurrentWidget(self.interactive_deck)
+
+        self._update_file_display()
+        self.files_selected.emit(self._current_module_id, self._current_files)
+
+    def _on_queue_file_selected(self, file_path: str) -> None:
+        """Handle track selection in batch queue drawer."""
+        self._current_file = file_path
+        self._player.load(file_path)
+        self._meter_engine.load_file(file_path)
+        if isinstance(self._custom_stage_widget, WaveformStage):
+            self._custom_stage_widget.load_audio_preview(file_path)
+            self._player.set_loop(
+                self.btn_transport_loop.isChecked(),
+                self._custom_stage_widget._start_sec,
+                self._custom_stage_widget._end_sec,
+            )
+        self._update_file_display()
+        self.file_selected.emit(self._current_module_id, file_path)
 
     def _update_file_display(self) -> None:
         """Refresh deck and footer displays with the active buffer state."""
@@ -998,12 +1229,17 @@ class WorkspacePage(QWidget):
                 new_stage.stemMuteToggled.connect(self._player.set_stem_mute)
                 new_stage.stemFaderChanged.connect(self._player.set_stem_fader)
 
-            if self._current_file or self._current_files:
-                self.deck_stack.setCurrentIndex(1)
+            if len(self._current_files) > 1 and self.btn_view_queue.isChecked():
+                self.deck_stack.setCurrentWidget(self.batch_queue_drawer)
+            elif self._current_file or self._current_files:
+                self.deck_stack.setCurrentWidget(self._custom_stage_widget)
             else:
-                self.deck_stack.setCurrentIndex(0)
+                self.deck_stack.setCurrentWidget(self.interactive_deck)
         else:
-            self.deck_stack.setCurrentIndex(0)
+            if len(self._current_files) > 1 and self.btn_view_queue.isChecked():
+                self.deck_stack.setCurrentWidget(self.batch_queue_drawer)
+            else:
+                self.deck_stack.setCurrentWidget(self.interactive_deck)
 
     def _on_waveform_ab_toggled(self, mode: str) -> None:
         """Handle A/B comparison switch from WaveformStage."""
@@ -1053,6 +1289,11 @@ class WorkspacePage(QWidget):
         else:
             self._current_file = None
             self._current_files = []
+
+        self._last_output_file = None
+        self.handoff_container.setVisible(False)
+        self.batch_queue_drawer.set_files(self._current_files)
+        self.view_toggle_container.setVisible(len(self._current_files) > 1)
 
         self._update_file_display()
 
@@ -1228,6 +1469,12 @@ class WorkspacePage(QWidget):
         self.lbl_deck_badge.setText("DSP ACTIVE")
         self.lbl_deck_badge.setStyleSheet(f"color: {TOKENS.colors.semantic.warning}; background: transparent;")
 
+        self._last_output_file = None
+        self.handoff_container.setVisible(False)
+        if self._current_files:
+            for f in self._current_files:
+                self.batch_queue_drawer.set_file_status(f, "processing", "PROCG [==]")
+
         # Case 1: Music Analyzer (Key & Tempo + Audio Analyzer)
         if self._current_module_id == "analyze":
             def run_analysis(cancel_token=None, on_progress=None):
@@ -1394,6 +1641,18 @@ class WorkspacePage(QWidget):
         self.lbl_engine_status.setText(f"DSP: {pct}%{eta_str}")
         self.lbl_file_pill.setText(f"PROCESSING: {pct}%{eta_str} — {msg}")
 
+        # Update batch queue drawer per-track progress
+        if self._current_files:
+            matched = False
+            for f in self._current_files:
+                name = Path(f).name
+                if f"[{name}]" in msg or name in msg:
+                    self.batch_queue_drawer.set_progress(f, val)
+                    matched = True
+                    break
+            if not matched and self._current_file:
+                self.batch_queue_drawer.set_progress(self._current_file, val)
+
     def _on_worker_finished(self, result: Any) -> None:
         """Handle worker completion."""
         action_text = self._current_module_info.get("action_text", "Execute")
@@ -1416,6 +1675,7 @@ class WorkspacePage(QWidget):
             self.lbl_deck_badge.setText("CANCELLED")
             self.lbl_deck_badge.setStyleSheet(f"color: {TOKENS.colors.semantic.warning}; background: transparent;")
             self.lbl_file_pill.setText("PROCESSING CANCELLED BY USER")
+            self.handoff_container.setVisible(False)
             return
 
         if is_failed:
@@ -1425,6 +1685,12 @@ class WorkspacePage(QWidget):
         self.lbl_deck_badge.setText("COMPLETED")
         self.lbl_deck_badge.setStyleSheet(f"color: {TOKENS.colors.semantic.success}; background: transparent;")
 
+        # Update batch queue statuses to DONE
+        if self._current_files:
+            for f in self._current_files:
+                self.batch_queue_drawer.set_file_status(f, "done", "DONE ✓")
+
+        out_file = None
         if isinstance(self._custom_stage_widget, AnalysisStage) and isinstance(data, dict):
             first_res = next(iter(data.values())) if data else {}
             if isinstance(first_res, dict):
@@ -1451,8 +1717,11 @@ class WorkspacePage(QWidget):
             self._custom_stage_widget.load_stems(stems)
             self._player.load_stems(stems)
             self._meter_engine.load_stems(stems)
+            if isinstance(stems, dict) and stems:
+                first_stem = next(iter(stems.values()))
+                if isinstance(first_stem, (str, Path)):
+                    out_file = Path(first_stem)
         elif isinstance(self._custom_stage_widget, WaveformStage):
-            out_file = None
             if isinstance(data, (str, Path)):
                 out_file = Path(data)
             elif isinstance(data, dict):
@@ -1464,7 +1733,21 @@ class WorkspacePage(QWidget):
                 if self._current_file:
                     self._player.load_ab(self._current_file, str(out_file))
                     self._player.set_ab_mode("B")
+        else:
+            if isinstance(data, (str, Path)):
+                out_file = Path(data)
+            elif isinstance(data, dict):
+                first_val = next(iter(data.values())) if data else None
+                if isinstance(first_val, (str, Path)):
+                    out_file = Path(first_val)
 
+        # Post-Processing Hand-off visibility
+        if out_file and out_file.is_file():
+            self._last_output_file = out_file
+            self.handoff_container.setVisible(True)
+        else:
+            self._last_output_file = None
+            self.handoff_container.setVisible(False)
 
         accent_key = self._current_module_info.get("accent_key", "converter")
         accent = TOKENS.colors.accents.get(accent_key, TOKENS.colors.accents["converter"])
@@ -1493,3 +1776,70 @@ class WorkspacePage(QWidget):
             f"border-radius: {TOKENS.radii.sm}px;"
             f"padding: 8px 14px;"
         )
+        self._last_output_file = None
+        self.handoff_container.setVisible(False)
+        if self._current_files:
+            for f in self._current_files:
+                self.batch_queue_drawer.set_file_status(f, "error", "ERROR ✗")
+
+    # --- Post-Processing Hand-off & Routing Actions ---
+
+    def _reveal_result_in_finder(self) -> None:
+        """Reveal the last generated output file in the operating system's file manager."""
+        if self._last_output_file:
+            success = reveal_in_file_manager(self._last_output_file)
+            if not success:
+                log.warning("Could not reveal file in file manager: %s", self._last_output_file)
+
+    def _play_result_audio(self) -> None:
+        """Load and start playback of the last generated output file."""
+        if self._last_output_file and self._last_output_file.is_file():
+            self._player.load(str(self._last_output_file))
+            self._meter_engine.load_file(str(self._last_output_file))
+            if isinstance(self._custom_stage_widget, WaveformStage):
+                self._custom_stage_widget.load_processed_preview(str(self._last_output_file))
+                self._custom_stage_widget._on_btn_b_clicked()
+            self._player.play()
+
+    def _show_send_to_module_menu(self) -> None:
+        """Show dropdown menu allowing direct routing of output audio to another Umbra module."""
+        if not self._last_output_file:
+            return
+
+        from src.ui.views.launcher_grid import MODULE_DEFINITIONS
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{"
+            f"  background-color: #11141A;"
+            f"  color: {TOKENS.colors.text.primary};"
+            f"  border: 1px solid {TOKENS.colors.border.card};"
+            f"  border-radius: 4px;"
+            f"  padding: 4px 0px;"
+            f"}}"
+            f"QMenu::item {{"
+            f"  padding: 6px 20px 6px 24px;"
+            f"  font-size: 12px;"
+            f"}}"
+            f"QMenu::item:selected {{"
+            f"  background-color: #2D1E10;"
+            f"  color: #F59E0B;"
+            f"}}"
+        )
+
+        for mod in MODULE_DEFINITIONS:
+            mod_id = mod["id"]
+            if mod_id == self._current_module_id:
+                continue
+            code = mod.get("code", "")
+            title = mod.get("title", "")
+            action = menu.addAction(f"{code}  {title}")
+            action.triggered.connect(lambda checked=False, target_id=mod_id: self._route_to_target_module(target_id))
+
+        pos = self.btn_send_to_module.mapToGlobal(QPoint(0, self.btn_send_to_module.height() + 2))
+        menu.exec(pos)
+
+    def _route_to_target_module(self, target_id: str) -> None:
+        """Route the last generated output audio directly into another module."""
+        if self._last_output_file:
+            log.info("Routing output file %s to module %s", self._last_output_file, target_id)
+            self.route_to_module_requested.emit(target_id, str(self._last_output_file))

@@ -149,6 +149,7 @@ class MainWindow(QMainWindow):
         # Index 1: 4-Slot Workspace Template
         self.page_workspace = WorkspacePage(self.stack)
         self.page_workspace.back_requested.connect(self.navigate_to_launcher)
+        self.page_workspace.route_to_module_requested.connect(self.navigate_to_module_with_file)
         self.stack.addWidget(self.page_workspace)
 
         # Index 2: Settings View
