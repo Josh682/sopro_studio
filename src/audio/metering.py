@@ -96,6 +96,7 @@ class AudioMeterEngine(QObject):
     levelsUpdated = Signal(float, float, float, float)  # (rms_l_db, rms_r_db, peak_l_db, peak_r_db)
     ballisticsUpdated = Signal(float, float)            # (angle_l_deg, angle_r_deg)
     clipDetected = Signal(bool, bool)                   # (clip_l, clip_r)
+    stemLevelsUpdated = Signal(dict)                    # {stem_name: rms_db}
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -104,9 +105,14 @@ class AudioMeterEngine(QObject):
         self._sample_rate: int = 44100
         self._duration_sec: float = 0.0
 
+        # Multi-Stem Samples Storage
+        self._stem_samples: dict[str, np.ndarray] = {}
+        self._stem_sample_rate: int = 44100
+
         # Independent physical needles for Left and Right channels
         self._needle_l = BallisticNeedle(stiffness=0.20, damping=0.70)
         self._needle_r = BallisticNeedle(stiffness=0.20, damping=0.70)
+
 
         # Clip detector state (with 500ms release hold)
         self._clip_hold_sec: float = 0.50
@@ -169,6 +175,89 @@ class AudioMeterEngine(QObject):
         self.levelsUpdated.emit(-80.0, -80.0, -80.0, -80.0)
         self.ballisticsUpdated.emit(self._needle_l.min_angle, self._needle_r.min_angle)
         self.clipDetected.emit(False, False)
+        if self._stem_samples:
+            self.stemLevelsUpdated.emit({s: -80.0 for s in self._stem_samples})
+
+    # -------------------------------------------------------------------------
+    # Multi-Stem Metering Management
+    # -------------------------------------------------------------------------
+
+    def load_stems(self, stem_files: dict[str, Path | str]) -> bool:
+        """Load audio buffers for stems from audio files."""
+        import soundfile as sf
+        stems_dict = {}
+        target_sr = 44100
+        for name, p in stem_files.items():
+            path_obj = Path(p).resolve()
+            if path_obj.is_file():
+                try:
+                    data, sr = sf.read(str(path_obj), dtype="float32", always_2d=True)
+                    stems_dict[name.lower()] = data
+                    target_sr = sr
+                except Exception as e:
+                    log.warning("AudioMeterEngine: failed loading stem %s: %s", name, e)
+
+        if not stems_dict:
+            return False
+
+        self.set_stem_samples(stems_dict, target_sr)
+        return True
+
+    def set_stem_samples(self, stems: dict[str, np.ndarray], sample_rate: int) -> None:
+        """Store stem waveform arrays for real-time per-stem RMS calculation."""
+        self._stem_samples = stems
+        self._stem_sample_rate = max(1000, int(sample_rate))
+        self.reset()
+        log.info("AudioMeterEngine: loaded %d stems for metering @ %d Hz", len(stems), sample_rate)
+
+    def process_stem_playhead(
+        self,
+        pos_sec: float,
+        stem_gains: Optional[dict[str, float]] = None,
+        window_ms: float = 50.0,
+    ) -> dict[str, float]:
+        """Compute RMS levels in dBFS for each active stem around current playhead.
+
+        Args:
+            pos_sec: Current audio playhead in seconds.
+            stem_gains: Optional linear gain map {stem_name: gain_float}.
+            window_ms: Analysis window in ms.
+
+        Returns:
+            Dictionary mapping stem_name to dBFS level.
+        """
+        if not self._stem_samples:
+            return {}
+
+        gains = stem_gains or {}
+        half_win_sec = (window_ms / 1000.0) / 2.0
+        start_sec = max(0.0, float(pos_sec) - half_win_sec)
+        end_sec = float(pos_sec) + half_win_sec
+
+        start_idx = int(start_sec * self._stem_sample_rate)
+        end_idx = int(end_sec * self._stem_sample_rate)
+
+        results: dict[str, float] = {}
+        for name, samples in self._stem_samples.items():
+            gain = max(0.0, float(gains.get(name, 1.0)))
+            if gain <= 1e-4 or end_idx <= start_idx or start_idx >= len(samples):
+                results[name] = -80.0
+                continue
+
+            chunk = samples[start_idx:min(len(samples), end_idx)]
+            if len(chunk) == 0:
+                results[name] = -80.0
+                continue
+
+            # Downmix or mean square
+            mean_sq = float(np.mean(chunk ** 2))
+            rms = math.sqrt(mean_sq) * gain
+            rms_db = 20.0 * math.log10(max(rms, 1e-4))
+            results[name] = max(-80.0, min(6.0, rms_db))
+
+        self.stemLevelsUpdated.emit(results)
+        return results
+
 
     # -------------------------------------------------------------------------
     # Real-time Meter Processing

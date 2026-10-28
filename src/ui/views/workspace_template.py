@@ -987,11 +987,16 @@ class WorkspacePage(QWidget):
                     new_stage.load_audio_preview(self._current_file)
                 new_stage.rangeChanged.connect(self._on_waveform_range_changed)
                 new_stage.seekRequested.connect(self._player.seek)
+                new_stage.abToggled.connect(self._on_waveform_ab_toggled)
                 self._player.set_loop(
                     self.btn_transport_loop.isChecked(),
                     new_stage._start_sec,
                     new_stage._end_sec,
                 )
+            elif isinstance(new_stage, StemDeckStage):
+                new_stage.stemSoloToggled.connect(self._player.set_stem_solo)
+                new_stage.stemMuteToggled.connect(self._player.set_stem_mute)
+                new_stage.stemFaderChanged.connect(self._player.set_stem_fader)
 
             if self._current_file or self._current_files:
                 self.deck_stack.setCurrentIndex(1)
@@ -1000,7 +1005,14 @@ class WorkspacePage(QWidget):
         else:
             self.deck_stack.setCurrentIndex(0)
 
+    def _on_waveform_ab_toggled(self, mode: str) -> None:
+        """Handle A/B comparison switch from WaveformStage."""
+        self._player.set_ab_mode(mode)
+        if self._player.current_file:
+            self._meter_engine.load_file(self._player.current_file)
+
     def _on_waveform_range_changed(self, start_sec: float, end_sec: float) -> None:
+
         """Sync WaveformStage range markers with trimmer controls in Slot 3 and player loop."""
         for name, widget in self._rack_controller.controls.items():
             if name == "start_sec" and hasattr(widget, "setValue"):
@@ -1082,7 +1094,12 @@ class WorkspacePage(QWidget):
         """Update WaveformStage playhead cursor and meter engine on 60 FPS tick."""
         if isinstance(self._custom_stage_widget, WaveformStage):
             self._custom_stage_widget.set_playhead(pos_sec)
+        elif isinstance(self._custom_stage_widget, StemDeckStage):
+            stem_gains = self._player.get_stem_gains()
+            stem_levels = self._meter_engine.process_stem_playhead(pos_sec, stem_gains)
+            self._custom_stage_widget.set_stem_levels(stem_levels)
         self._meter_engine.process_playhead(pos_sec)
+
 
     def _on_meter_levels_updated(self, rms_l: float, rms_r: float, peak_l: float, peak_r: float) -> None:
         """Update live RMS telemetry display in Slot 2 Deck Header."""
@@ -1411,11 +1428,43 @@ class WorkspacePage(QWidget):
         if isinstance(self._custom_stage_widget, AnalysisStage) and isinstance(data, dict):
             first_res = next(iter(data.values())) if data else {}
             if isinstance(first_res, dict):
-                key = first_res.get("key", "A MINOR")
-                camelot = first_res.get("camelot", "8A")
-                bpm = float(first_res.get("bpm", 120.0))
-                conf = float(first_res.get("confidence", 0.95))
-                self._custom_stage_widget.set_results(key, camelot, bpm, conf)
+                key_obj = first_res.get("key")
+                tempo_obj = first_res.get("tempo")
+                key_str = getattr(key_obj, "display", str(first_res.get("key", "A MINOR")))
+                bpm_val = getattr(tempo_obj, "bpm", float(first_res.get("bpm", 120.0)))
+                conf_val = getattr(key_obj, "confidence", float(first_res.get("confidence", 0.95)))
+
+                camelot_str = first_res.get("camelot")
+                if not camelot_str:
+                    from src.ui.components.custom_stages.analysis_stage import CAMELOT_KEY_NAMES
+                    tonic = getattr(key_obj, "tonic", "")
+                    mode = getattr(key_obj, "mode", "minor")
+                    camelot_str = "8A"
+                    for c_code, c_name in CAMELOT_KEY_NAMES.items():
+                        if c_name.lower() in key_str.lower() or (tonic and tonic.lower() in c_name.lower()):
+                            camelot_str = c_code
+                            break
+                self._custom_stage_widget.set_results(key_str, camelot_str, bpm_val, conf_val)
+        elif isinstance(self._custom_stage_widget, StemDeckStage) and isinstance(data, dict):
+            first_val = next(iter(data.values())) if data else {}
+            stems = first_val if isinstance(first_val, dict) else data
+            self._custom_stage_widget.load_stems(stems)
+            self._player.load_stems(stems)
+            self._meter_engine.load_stems(stems)
+        elif isinstance(self._custom_stage_widget, WaveformStage):
+            out_file = None
+            if isinstance(data, (str, Path)):
+                out_file = Path(data)
+            elif isinstance(data, dict):
+                first_val = next(iter(data.values())) if data else None
+                if isinstance(first_val, (str, Path)):
+                    out_file = Path(first_val)
+            if out_file and out_file.is_file():
+                self._custom_stage_widget.load_processed_preview(str(out_file))
+                if self._current_file:
+                    self._player.load_ab(self._current_file, str(out_file))
+                    self._player.set_ab_mode("B")
+
 
         accent_key = self._current_module_info.get("accent_key", "converter")
         accent = TOKENS.colors.accents.get(accent_key, TOKENS.colors.accents["converter"])

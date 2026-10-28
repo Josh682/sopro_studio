@@ -47,6 +47,8 @@ class AudioPlayerController(QObject):
     stateChanged = Signal(str)            # "playing", "paused", "stopped"
     timecodeUpdated = Signal(str, str)    # current_str, duration_str (e.g. "00:12.45", "03:40.00")
     playbackFinished = Signal()           # emitted when end of file / loop completed
+    abSwapped = Signal(str)               # "A" or "B"
+
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -70,6 +72,19 @@ class AudioPlayerController(QObject):
         self._loop_start_sec: float = 0.0
         self._loop_end_sec: float = 0.0
 
+        # A/B Comparison Sources
+        self._source_a: Optional[Path] = None
+        self._source_b: Optional[Path] = None
+        self._active_ab: str = "A"
+
+        # Multi-Stem Playback Engine
+        self._stem_paths: dict[str, Path] = {}
+        self._stem_players: dict[str, QMediaPlayer] = {}
+        self._stem_outputs: dict[str, QAudioOutput] = {}
+        self._stem_faders: dict[str, float] = {}  # 0.0 to 2.0 (1.0 = 0dB)
+        self._stem_solos: dict[str, bool] = {}
+        self._stem_mutes: dict[str, bool] = {}
+
         # Wire native QMediaPlayer signals
         self._player.durationChanged.connect(self._on_duration_changed)
         self._player.positionChanged.connect(self._on_position_changed)
@@ -79,6 +94,15 @@ class AudioPlayerController(QObject):
     # -------------------------------------------------------------------------
     # Properties & Status
     # -------------------------------------------------------------------------
+
+    @property
+    def is_stem_mode(self) -> bool:
+        return bool(self._stem_players)
+
+    @property
+    def active_ab(self) -> str:
+        return self._active_ab
+
 
     @property
     def current_file(self) -> Optional[Path]:
@@ -160,6 +184,8 @@ class AudioPlayerController(QObject):
 
         self._current_state = "playing"
         self._player.play()
+        for sp in self._stem_players.values():
+            sp.play()
         self._tick_timer.start()
         self.stateChanged.emit("playing")
 
@@ -167,6 +193,8 @@ class AudioPlayerController(QObject):
         """Pause audio playback."""
         self._current_state = "paused"
         self._player.pause()
+        for sp in self._stem_players.values():
+            sp.pause()
         self._tick_timer.stop()
         self.stateChanged.emit("paused")
 
@@ -174,6 +202,8 @@ class AudioPlayerController(QObject):
         """Stop playback and rewind to start or loop start."""
         self._current_state = "stopped"
         self._player.stop()
+        for sp in self._stem_players.values():
+            sp.stop()
         self._tick_timer.stop()
         rewind_pos = self._loop_start_sec if self._is_looping else 0.0
         self._position_sec = rewind_pos
@@ -196,9 +226,12 @@ class AudioPlayerController(QObject):
 
         target_ms = int(clamped_sec * 1000)
         self._player.setPosition(target_ms)
+        for sp in self._stem_players.values():
+            sp.setPosition(target_ms)
 
         self.positionChanged.emit(clamped_sec)
         self.timecodeUpdated.emit(format_timecode(clamped_sec), format_timecode(self._duration_sec))
+
 
     def set_loop(self, enabled: bool, start_sec: float = 0.0, end_sec: float = 0.0) -> None:
         """Configure loop state and optional active boundary range."""
@@ -214,6 +247,174 @@ class AudioPlayerController(QObject):
     def get_timecode(self) -> tuple[str, str]:
         """Return (current_timecode, total_duration_timecode)."""
         return format_timecode(self._position_sec), format_timecode(self._duration_sec)
+
+    # -------------------------------------------------------------------------
+    # Before / After (A/B) Comparison Engine
+    # -------------------------------------------------------------------------
+
+    def swap_source(self, path: Path | str) -> bool:
+        """Seamlessly swap playback source while preserving active playhead position.
+
+        If currently playing, playback continues from the exact same position in the new track.
+        """
+        p = Path(path).resolve()
+        if not p.is_file():
+            log.warning("AudioPlayer: swap_source file not found: %s", p)
+            return False
+
+        pos = self._position_sec
+        was_playing = self.is_playing
+
+        self._current_path = p
+        url = QUrl.fromLocalFile(str(p))
+        self._player.setSource(url)
+
+        # Restore playhead
+        self.seek(pos)
+        if was_playing:
+            self._player.play()
+            self._current_state = "playing"
+            self._tick_timer.start()
+            self.stateChanged.emit("playing")
+
+        log.info("AudioPlayer: swapped source to '%s' at %.2fs", p.name, pos)
+        return True
+
+    def load_ab(self, path_a: Path | str, path_b: Path | str) -> bool:
+        """Configure dual A/B comparison tracks and load track A as primary."""
+        pa = Path(path_a).resolve()
+        pb = Path(path_b).resolve()
+        if not pa.is_file() or not pb.is_file():
+            return False
+        self._source_a = pa
+        self._source_b = pb
+        self._active_ab = "A"
+        res = self.load(pa)
+        self.abSwapped.emit("A")
+        return res
+
+    def set_ab_mode(self, mode: str) -> bool:
+        """Switch between A (Raw) and B (Processed) tracks with playhead preservation."""
+        mode_upper = mode.upper()
+        if mode_upper not in ("A", "B"):
+            return False
+        if mode_upper == self._active_ab:
+            return True
+        target_path = self._source_a if mode_upper == "A" else self._source_b
+        if not target_path or not target_path.is_file():
+            return False
+        self._active_ab = mode_upper
+        self.swap_source(target_path)
+        self.abSwapped.emit(mode_upper)
+        return True
+
+    # -------------------------------------------------------------------------
+    # Multi-Stem Mixing & Solo/Mute Engine
+    # -------------------------------------------------------------------------
+
+    def load_stems(self, stems: dict[str, Path | str]) -> bool:
+        """Load multiple stem audio tracks for synchronized playback and mixing."""
+        self.stop()
+        self._clear_stems()
+
+        valid_stems: dict[str, Path] = {}
+        for name, p in stems.items():
+            path_obj = Path(p).resolve()
+            if path_obj.is_file():
+                valid_stems[name.lower()] = path_obj
+
+        if not valid_stems:
+            return False
+
+        # Pick first stem as master clock source
+        first_name = next(iter(valid_stems))
+        first_path = valid_stems[first_name]
+        self.load(first_path)
+
+        for name, path_obj in valid_stems.items():
+            sub_player = QMediaPlayer(self)
+            sub_out = QAudioOutput(self)
+            sub_player.setAudioOutput(sub_out)
+            sub_player.setSource(QUrl.fromLocalFile(str(path_obj)))
+
+            self._stem_players[name] = sub_player
+            self._stem_outputs[name] = sub_out
+            self._stem_paths[name] = path_obj
+            self._stem_faders[name] = 1.0  # 0 dB
+            self._stem_solos[name] = False
+            self._stem_mutes[name] = False
+
+        self._update_stem_volumes()
+        log.info("AudioPlayer: loaded %d stems (%s)", len(valid_stems), ", ".join(valid_stems.keys()))
+        return True
+
+    def _clear_stems(self) -> None:
+        """Clean up stem sub-players."""
+        for p in self._stem_players.values():
+            p.stop()
+            p.deleteLater()
+        self._stem_players.clear()
+        self._stem_outputs.clear()
+        self._stem_paths.clear()
+        self._stem_faders.clear()
+        self._stem_solos.clear()
+        self._stem_mutes.clear()
+
+    def set_stem_fader(self, stem_name: str, gain: float) -> None:
+        """Set stem volume fader linear gain (0.0 to 2.0)."""
+        name = stem_name.lower()
+        if name in self._stem_faders:
+            self._stem_faders[name] = max(0.0, min(2.0, float(gain)))
+            self._update_stem_volumes()
+
+    def set_stem_solo(self, stem_name: str, solo: bool) -> None:
+        """Toggle solo state for a stem."""
+        name = stem_name.lower()
+        if name in self._stem_solos:
+            self._stem_solos[name] = bool(solo)
+            self._update_stem_volumes()
+
+    def set_stem_mute(self, stem_name: str, mute: bool) -> None:
+        """Toggle mute state for a stem."""
+        name = stem_name.lower()
+        if name in self._stem_mutes:
+            self._stem_mutes[name] = bool(mute)
+            self._update_stem_volumes()
+
+    def _update_stem_volumes(self) -> None:
+        """Calculate and apply hardware volume for all active stems."""
+        any_solo = any(self._stem_solos.values())
+        for name, out in self._stem_outputs.items():
+            solo = self._stem_solos.get(name, False)
+            mute = self._stem_mutes.get(name, False)
+            fader = self._stem_faders.get(name, 1.0)
+
+            if mute:
+                eff = 0.0
+            elif any_solo:
+                eff = fader if solo else 0.0
+            else:
+                eff = fader
+
+            # Clamp output to [0.0, 1.0] for QAudioOutput
+            out.setVolume(max(0.0, min(1.0, eff)))
+
+    def get_stem_gains(self) -> dict[str, float]:
+        """Return effective linear gains of all stems factoring in Solo and Mute."""
+        any_solo = any(self._stem_solos.values())
+        gains = {}
+        for name in self._stem_faders:
+            solo = self._stem_solos.get(name, False)
+            mute = self._stem_mutes.get(name, False)
+            fader = self._stem_faders.get(name, 1.0)
+            if mute:
+                gains[name] = 0.0
+            elif any_solo:
+                gains[name] = fader if solo else 0.0
+            else:
+                gains[name] = fader
+        return gains
+
 
     # -------------------------------------------------------------------------
     # Internal Event Handlers
