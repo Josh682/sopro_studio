@@ -16,6 +16,7 @@ from src.ui.qt import (
     QColor,
     QFont,
     QFontMetrics,
+    QKeyEvent,
     QLinearGradient,
     QPainter,
     QPainterPath,
@@ -63,7 +64,9 @@ class AnalogKnob(QWidget):
         self.setFixedSize(76, 96)
         self.setCursor(Qt.CursorShape.SizeVerCursor)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
+        self._detent_val = 0.0 if (self._min < 0.0 < self._max) else (self._min + self._max) / 2.0
         self._drag_start_y: Optional[float] = None
         self._drag_start_val: float = self._value
         self._is_hovered: bool = False
@@ -76,7 +79,15 @@ class AnalogKnob(QWidget):
     def setValue(self, val: float) -> None:
         clamped = max(self._min, min(self._max, float(val)))
         if abs(clamped - self._value) > 1e-5:
+            old_val = self._value
             self._value = clamped
+            # Detent crossing trigger (12 o'clock center tick)
+            if (old_val < self._detent_val <= clamped) or (clamped <= self._detent_val < old_val):
+                try:
+                    from src.audio.haptics import play_knob_detent
+                    play_knob_detent()
+                except Exception:
+                    pass
             self.valueChanged.emit(self._value)
             self.update()
 
@@ -84,9 +95,52 @@ class AnalogKnob(QWidget):
         self._min = float(min_val)
         self._max = float(max_val)
         self._step = float(step)
+        self._detent_val = 0.0 if (self._min < 0.0 < self._max) else (self._min + self._max) / 2.0
         self.setValue(self._value)
 
     # --- Interaction Events ---
+
+    def focusInEvent(self, event) -> None:
+        super().focusInEvent(event)
+        self.update()
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        self.update()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        span = self._max - self._min
+        delta = max(self._step, span * 0.01)  # 1% adjustment per Milestone 5
+        key = event.key()
+        if key in (Qt.Key.Key_Up, Qt.Key.Key_Right):
+            self.setValue(self._value + delta)
+            event.accept()
+            return
+        elif key in (Qt.Key.Key_Down, Qt.Key.Key_Left):
+            self.setValue(self._value - delta)
+            event.accept()
+            return
+        elif key == Qt.Key.Key_PageUp:
+            self.setValue(self._value + span * 0.10)
+            event.accept()
+            return
+        elif key == Qt.Key.Key_PageDown:
+            self.setValue(self._value - span * 0.10)
+            event.accept()
+            return
+        elif key == Qt.Key.Key_Home:
+            self.setValue(self._min)
+            event.accept()
+            return
+        elif key == Qt.Key.Key_End:
+            self.setValue(self._max)
+            event.accept()
+            return
+        elif key in (Qt.Key.Key_R, Qt.Key.Key_Escape):
+            self.setValue(self._default)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def enterEvent(self, event) -> None:
         self._is_hovered = True
@@ -199,6 +253,12 @@ class AnalogKnob(QWidget):
         hover_color = QColor(self._accent_color) if self._is_hovered else QColor(0, 0, 0, 200)
         p.setPen(QPen(hover_color, 1.0))
         p.drawEllipse(QPointF(cx, cy), radius, radius)
+
+        # 4b. Keyboard Focus Ring (when focused)
+        if self.hasFocus():
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor("#F59E0B"), 1.8))
+            p.drawEllipse(QPointF(cx, cy), radius + 3.0, radius + 3.0)
 
         # 5. Inner Metal Cap
         cap_r = radius - 3.5

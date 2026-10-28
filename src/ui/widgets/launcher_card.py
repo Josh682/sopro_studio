@@ -27,8 +27,10 @@ from src.ui.qt import (
     QFont,
     QFrame,
     QHBoxLayout,
+    QKeyEvent,
     QLabel,
     QLinearGradient,
+    QMouseEvent,
     QPainter,
     QPainterPath,
     QPen,
@@ -71,6 +73,7 @@ class LauncherCard(QFrame):
     # Signals
     file_dropped = Signal(str, str)  # (module_id, file_path)
     open_requested = Signal(str)  # module_id
+    focus_changed = Signal(bool)
 
     def __init__(
         self,
@@ -99,6 +102,7 @@ class LauncherCard(QFrame):
 
         self.setAcceptDrops(True)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFixedHeight(TOKENS.dimensions.grid.card_height)  # 216px
         self.setFixedWidth(TOKENS.dimensions.grid.card_width)  # 346px
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -218,10 +222,37 @@ class LauncherCard(QFrame):
         self.update()
         super().leaveEvent(event)
 
-    def mousePressEvent(self, event) -> None:
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            try:
+                from src.audio.haptics import play_switch_click
+                play_switch_click()
+            except Exception:
+                pass
             self.open_requested.emit(self.module_id)
         super().mousePressEvent(event)
+
+    def focusInEvent(self, event) -> None:
+        self.focus_changed.emit(True)
+        super().focusInEvent(event)
+        self.update()
+
+    def focusOutEvent(self, event) -> None:
+        self.focus_changed.emit(False)
+        super().focusOutEvent(event)
+        self.update()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            try:
+                from src.audio.haptics import play_switch_click
+                play_switch_click()
+            except Exception:
+                pass
+            self.open_requested.emit(self.module_id)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     # --- Drag & Drop ---
 
@@ -334,6 +365,18 @@ class LauncherCard(QFrame):
             painter.setPen(QPen(QColor(0, 0, 0, 90), 1.0))
             painter.drawLine(QPointF(0.5, r), QPointF(0.5, h - r))
             painter.drawLine(QPointF(w - 0.5, r), QPointF(w - 0.5, h - r))
+
+        # 2b. Keyboard Focus Indicator: 2px Amber Ring per DESIGN.md & Milestone 5
+        if self.hasFocus():
+            painter.save()
+            focus_ring_rect = card_rect.adjusted(0.5, 0.5, -0.5, -0.5)
+            focus_path = QPainterPath()
+            focus_path.addRoundedRect(focus_ring_rect, r, r)
+            focus_pen = QPen(QColor("#F59E0B"), 2.0)
+            painter.setPen(focus_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(focus_path)
+            painter.restore()
 
         # 3. 1/4" Studio Input Jack Socket with Signal Status LED in Header
         self._draw_input_jack(painter)

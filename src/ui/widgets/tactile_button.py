@@ -112,12 +112,36 @@ class TactileButton(QPushButton):
                     self._audio_click_callback()
                 except Exception:
                     pass
+            else:
+                try:
+                    from src.audio.haptics import play_switch_click
+                    play_switch_click()
+                except Exception:
+                    pass
         super().mousePressEvent(event)
         self.update()
 
     def mouseReleaseEvent(self, event) -> None:
         super().mouseReleaseEvent(event)
         self.update()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space) and self.isEnabled():
+            if self._audio_click_callback:
+                try:
+                    self._audio_click_callback()
+                except Exception:
+                    pass
+            else:
+                try:
+                    from src.audio.haptics import play_switch_click
+                    play_switch_click()
+                except Exception:
+                    pass
+            self.click()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def focusInEvent(self, event) -> None:
         super().focusInEvent(event)

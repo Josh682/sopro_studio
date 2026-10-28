@@ -21,6 +21,7 @@ from src.ui.qt import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QKeyEvent,
     QLabel,
     QSizePolicy,
     Qt,
@@ -131,6 +132,7 @@ class LauncherGridPage(QWidget):
 
         self.setAcceptDrops(True)
         self._cards: Dict[str, LauncherCard] = {}
+        self._focused_card_index: int = 0
         self._disarm_timer = QTimer(self)
         self._disarm_timer.setSingleShot(True)
         self._disarm_timer.setInterval(80)
@@ -169,12 +171,59 @@ class LauncherGridPage(QWidget):
             # Connect signals and event filter for global drag state coordination
             card.open_requested.connect(self._on_card_opened)
             card.file_dropped.connect(self._on_card_file_dropped)
+            card.focus_changed.connect(lambda focused, idx=i: self._on_card_focus_changed(idx, focused))
             card.installEventFilter(self)
 
             self._cards[mod["id"]] = card
             grid_layout.addWidget(card, row, col)
 
+        # Explicit Tab Order across cards 0 through 8
+        card_list = list(self._cards.values())
+        for idx in range(len(card_list) - 1):
+            QWidget.setTabOrder(card_list[idx], card_list[idx + 1])
+
         main_layout.addLayout(grid_layout)
+
+    def _on_card_focus_changed(self, idx: int, focused: bool) -> None:
+        if focused:
+            self._focused_card_index = idx
+
+    def get_focused_card_index(self) -> int:
+        return self._focused_card_index
+
+    def set_focused_card_index(self, index: int) -> None:
+        card_list = list(self._cards.values())
+        if 0 <= index < len(card_list):
+            self._focused_card_index = index
+            card_list[index].setFocus(Qt.FocusReason.TabFocusReason)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Handle 3x3 grid spatial arrow key navigation across module cards."""
+        card_list = list(self._cards.values())
+        current_idx = self._focused_card_index
+        for idx, card in enumerate(card_list):
+            if card.hasFocus():
+                current_idx = idx
+                break
+
+        key = event.key()
+        if key in (Qt.Key.Key_Right, Qt.Key.Key_Left, Qt.Key.Key_Down, Qt.Key.Key_Up):
+            if key == Qt.Key.Key_Right:
+                target_idx = (current_idx + 1) % len(card_list)
+            elif key == Qt.Key.Key_Left:
+                target_idx = (current_idx - 1) % len(card_list)
+            elif key == Qt.Key.Key_Down:
+                target_idx = (current_idx + 3) % len(card_list)
+            elif key == Qt.Key.Key_Up:
+                target_idx = (current_idx - 3) % len(card_list)
+            else:
+                target_idx = current_idx
+
+            self._focused_card_index = target_idx
+            card_list[target_idx].setFocus(Qt.FocusReason.TabFocusReason)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _set_armed(self, armed: bool) -> None:
         """Propagate armed stand-by state to all 9 module cards."""
