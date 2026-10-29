@@ -1657,6 +1657,8 @@ class WorkspacePage(QWidget):
                     out1 = declip.process_file(p, output_dir=output_dir, options=options, on_progress=p1, cancel_flag=cancel_token)
                     if cancel_token and cancel_token.is_set():
                         break
+                    if out1 is None or not Path(out1).exists():
+                        continue
                     def p2(sub_f, m):
                         if on_progress:
                             on_progress((i / total) + 0.5 / total + (sub_f / (total * 2)), f"[{p.name}] Restoration: {m}")
@@ -1723,6 +1725,8 @@ class WorkspacePage(QWidget):
                     out1 = denoiser.process_file(p, output_dir=output_dir, options=options, on_progress=p1, cancel_flag=cancel_token)
                     if cancel_token and cancel_token.is_set():
                         break
+                    if out1 is None or not Path(out1).exists():
+                        continue
                     def p2(sub_f, m):
                         if on_progress:
                             on_progress((i / total) + 0.5 / total + (sub_f / (total * 2)), f"[{p.name}] Dereverb: {m}")
