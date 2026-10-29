@@ -293,7 +293,17 @@ class DynamicRackController:
             elif isinstance(widget, AnalogToggle):
                 params[name] = widget.isChecked()
             elif isinstance(widget, AnalogChoiceSelector):
-                params[name] = widget.currentChoice()
+                val = widget.currentChoice()
+                if desc and desc.choices:
+                    choice_map = {str(c): c for c in desc.choices}
+                    params[name] = choice_map.get(val, val)
+                elif desc and str(desc.type).lower() == "int":
+                    try:
+                        params[name] = int(val)
+                    except (ValueError, TypeError):
+                        params[name] = val
+                else:
+                    params[name] = val
             else:
                 log.warning("Unknown widget type for control %s", name)
 

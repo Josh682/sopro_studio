@@ -54,11 +54,23 @@ class TrackCombiner(BaseProcessor):
             log.warning("No files provided for combination.")
             return {}
 
-        self.emit_progress(0.0, "Probing files...")
+        def emit_progress(pct: float, msg: str) -> None:
+            if on_progress:
+                val = pct / 100.0 if pct > 1.0 else pct
+                on_progress(val, msg)
+
+        def is_cancelled() -> bool:
+            return bool(cancel_flag and cancel_flag.is_set())
+
+        emit_progress(0.0, "Probing files...")
         
         # Parse options
         out_fmt = options.get("output_format", "wav").lower()
-        bit_depth = options.get("bit_depth", 24)
+        bit_depth_raw = options.get("bit_depth", 24)
+        try:
+            bit_depth = int(bit_depth_raw)
+        except (ValueError, TypeError):
+            bit_depth = 24
         out_name = options.get("output_filename", "mix")
         gain_per_track = options.get("gain_per_track", {})
         prevent_clipping = options.get("prevent_clipping", True)
@@ -79,9 +91,10 @@ class TrackCombiner(BaseProcessor):
         # 2. Load, resample and upmix
         for i, p in enumerate(files):
             pct = 10.0 + (i / len(files)) * 40.0
-            self.emit_progress(pct, f"Loading {p.name}...")
+            emit_progress(pct, f"Loading {p.name}...")
             
-            self.check_cancelled()
+            if is_cancelled():
+                return {}
             
             buffer = AudioBuffer.load(p, target_sr=target_sr)
             
@@ -102,8 +115,9 @@ class TrackCombiner(BaseProcessor):
             loaded_arrays.append(samples)
             
         # 3. Pad to max duration
-        self.emit_progress(60.0, "Padding and mixing stems...")
-        self.check_cancelled()
+        emit_progress(60.0, "Padding and mixing stems...")
+        if is_cancelled():
+            return {}
         
         max_frames = max(arr.shape[0] for arr in loaded_arrays)
         padded_arrays = []
@@ -118,7 +132,7 @@ class TrackCombiner(BaseProcessor):
         mixed = np.sum(padded_arrays, axis=0, dtype=np.float32)
         
         # 5. Prevent Clipping or Normalize
-        self.emit_progress(80.0, "Applying peak normalization checks...")
+        emit_progress(80.0, "Applying peak normalization checks...")
         peak = float(np.abs(mixed).max())
         if peak == 0.0:
             log.warning("Resulting mix is entirely silence.")
@@ -135,8 +149,9 @@ class TrackCombiner(BaseProcessor):
                 log.warning("Mix is clipping! Peak level is %.2f (over 1.0) but prevention is disabled.", peak)
 
         # 6. Export
-        self.emit_progress(90.0, "Writing mixdown file...")
-        self.check_cancelled()
+        emit_progress(90.0, "Writing mixdown file...")
+        if is_cancelled():
+            return {}
         
         out_buffer = AudioBuffer(mixed, target_sr, channels=2)
         
@@ -155,7 +170,7 @@ class TrackCombiner(BaseProcessor):
             compression=5,
         )
         
-        self.emit_progress(100.0, f"Mixdown complete: {out_path.name}")
+        emit_progress(100.0, f"Mixdown complete: {out_path.name}")
         return {files[0]: out_path}
 
 ProcessorRegistry.register(TrackCombiner)

@@ -87,9 +87,14 @@ class FormatConverter(BaseProcessor):
 
             # Resample
             target_sr_opt = options.get("sample_rate")
-            if target_sr_opt and isinstance(target_sr_opt, int) and target_sr_opt != buffer.sample_rate:
-                local_progress(0.35, f"Resampling to {target_sr_opt} Hz...")
-                buffer = buffer.resample(target_sr_opt)
+            if target_sr_opt:
+                try:
+                    target_sr = int(target_sr_opt)
+                    if target_sr != buffer.sample_rate:
+                        local_progress(0.35, f"Resampling to {target_sr} Hz...")
+                        buffer = buffer.resample(target_sr)
+                except (ValueError, TypeError):
+                    pass
             if cancel_flag and cancel_flag.is_set():
                 break
 
@@ -101,14 +106,32 @@ class FormatConverter(BaseProcessor):
                 break
 
             # Export
+            bit_depth_raw = options.get("bit_depth", 16)
+            try:
+                bit_depth = int(bit_depth_raw)
+            except (ValueError, TypeError):
+                bit_depth = 16
+
+            bitrate_raw = options.get("mp3_bitrate", 192)
+            try:
+                bitrate = int(bitrate_raw)
+            except (ValueError, TypeError):
+                bitrate = 192
+
+            compression_raw = options.get("flac_compression", 5)
+            try:
+                compression = int(compression_raw)
+            except (ValueError, TypeError):
+                compression = 5
+
             local_progress(0.70, f"Encoding {out_fmt.upper()}...")
             buffer.save(
                 out_path,
                 format=out_fmt,
                 sample_rate=buffer.sample_rate,
-                bit_depth=options.get("bit_depth", 16),
-                bitrate=options.get("mp3_bitrate", 192),
-                compression=options.get("flac_compression", 5),
+                bit_depth=bit_depth,
+                bitrate=bitrate,
+                compression=compression,
                 ffmpeg_bin=self._ffmpeg_bin,
             )
 

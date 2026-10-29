@@ -160,6 +160,21 @@ class AudioBuffer:
         bin_path = ffmpeg_bin or _default_ffmpeg_bin()
         sr = sample_rate if sample_rate is not None else self.sample_rate
 
+        try:
+            bit_depth = int(bit_depth)
+        except (ValueError, TypeError):
+            bit_depth = 16
+
+        try:
+            bitrate = int(bitrate)
+        except (ValueError, TypeError):
+            bitrate = 192
+
+        try:
+            compression = int(compression)
+        except (ValueError, TypeError):
+            compression = 5
+
         samples_to_save = self.samples
         if sample_rate is not None and sample_rate != self.sample_rate:
             samples_to_save = _resample_samples(self.samples, self.sample_rate, sample_rate)

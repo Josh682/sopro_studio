@@ -55,6 +55,10 @@ def write_wav(
         ValueError:  If *bit_depth* is not supported.
         WriteError:  If soundfile fails to write the file.
     """
+    try:
+        bit_depth = int(bit_depth)
+    except (ValueError, TypeError):
+        pass
     subtype = _BIT_DEPTH_SUBTYPES.get(bit_depth)
     if subtype is None:
         raise ValueError(
@@ -111,6 +115,11 @@ def write_mp3(
     channels = _channel_count(samples)
     raw_bytes = _samples_to_bytes(samples)
 
+    try:
+        bitrate = int(bitrate)
+    except (ValueError, TypeError):
+        bitrate = 192
+
     cmd = [
         ffmpeg_bin,
         "-y",
@@ -159,6 +168,11 @@ def write_flac(
     path.parent.mkdir(parents=True, exist_ok=True)
     channels = _channel_count(samples)
     raw_bytes = _samples_to_bytes(samples)
+
+    try:
+        compression = int(compression)
+    except (ValueError, TypeError):
+        compression = 5
 
     cmd = [
         ffmpeg_bin,
