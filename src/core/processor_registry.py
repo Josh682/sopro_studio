@@ -30,8 +30,15 @@ class ProcessorRegistry:
 
     @classmethod
     def get_processor(cls, processor_id: str, *args, **kwargs) -> BaseProcessor:
-        """Instantiate a processor by ID."""
-        return cls.get_processor_class(processor_id)(*args, **kwargs)
+        """Instantiate a processor by ID, gracefully handling constructor arguments."""
+        proc_cls = cls.get_processor_class(processor_id)
+        try:
+            return proc_cls(*args, **kwargs)
+        except TypeError:
+            try:
+                return proc_cls(*args)
+            except TypeError:
+                return proc_cls()
         
     @classmethod
     def list_processors(cls) -> list[ProcessorMetadata]:

@@ -853,9 +853,15 @@ class WorkspacePage(QWidget):
                     self._custom_stage_widget._start_sec,
                     self._custom_stage_widget._end_sec,
                 )
+                dur = self._custom_stage_widget._duration
+                if dur > 0.0:
+                    self._sync_trimmer_bounds(dur, self._custom_stage_widget._start_sec, self._custom_stage_widget._end_sec)
             self.deck_stack.setCurrentWidget(self._custom_stage_widget)
         else:
             self.deck_stack.setCurrentWidget(self.interactive_deck)
+            dur = self._get_current_file_duration()
+            if dur > 0.0:
+                self._sync_trimmer_bounds(dur)
 
         self.batch_queue_drawer.set_files(self._current_files)
         self.view_toggle_container.setVisible(False)
@@ -884,6 +890,9 @@ class WorkspacePage(QWidget):
                     self._custom_stage_widget._start_sec,
                     self._custom_stage_widget._end_sec,
                 )
+                dur = self._custom_stage_widget._duration
+                if dur > 0.0:
+                    self._sync_trimmer_bounds(dur, self._custom_stage_widget._start_sec, self._custom_stage_widget._end_sec)
 
         # Populate batch queue drawer
         self.batch_queue_drawer.set_files(self._current_files)
@@ -1007,6 +1016,9 @@ class WorkspacePage(QWidget):
                 self._custom_stage_widget._start_sec,
                 self._custom_stage_widget._end_sec,
             )
+            dur = self._custom_stage_widget._duration
+            if dur > 0.0:
+                self._sync_trimmer_bounds(dur, self._custom_stage_widget._start_sec, self._custom_stage_widget._end_sec)
         self._update_file_display()
         self.file_selected.emit(self._current_module_id, file_path)
 
@@ -1096,6 +1108,17 @@ class WorkspacePage(QWidget):
         elif mod in ("edit", "trim", "trimmer"):
             cls = ProcessorRegistry.get_processor_class("audio_trimmer")
             base_descs = cls.get_parameter_descriptors() if cls else []
+            # Dynamically adapt start_sec and end_sec descriptors if an audio file is loaded
+            dur = self._get_current_file_duration()
+            if dur > 0.0:
+                for d in base_descs:
+                    if d.name == "start_sec":
+                        d.max = dur
+                        d.max_value = dur
+                    elif d.name == "end_sec":
+                        d.max = dur
+                        d.max_value = dur
+                        d.default = dur
             norm_desc = ParameterDescriptor(
                 name="normalize_output",
                 label="Normalize Post-Trim",
@@ -1192,6 +1215,16 @@ class WorkspacePage(QWidget):
             clean_ctrl = self._rack_controller.controls.get("clean_mode")
             if clean_ctrl and hasattr(clean_ctrl, "choiceChanged"):
                 clean_ctrl.choiceChanged.connect(self._on_clean_mode_changed)
+        elif self._current_module_id in ("edit", "trim", "trimmer"):
+            start_ctrl = self._rack_controller.controls.get("start_sec")
+            end_ctrl = self._rack_controller.controls.get("end_sec")
+            if start_ctrl and hasattr(start_ctrl, "valueChanged"):
+                start_ctrl.valueChanged.connect(self._on_trim_knob_changed)
+            if end_ctrl and hasattr(end_ctrl, "valueChanged"):
+                end_ctrl.valueChanged.connect(self._on_trim_knob_changed)
+            dur = self._get_current_file_duration()
+            if dur > 0.0:
+                self._sync_trimmer_bounds(dur)
 
     def _update_custom_stage(self) -> None:
         """Update or switch Slot 2 custom visual stage."""
@@ -1214,16 +1247,21 @@ class WorkspacePage(QWidget):
             self.deck_stack.addWidget(self._custom_stage_widget)
 
             if isinstance(new_stage, WaveformStage):
-                if self._current_file:
-                    new_stage.load_audio_preview(self._current_file)
                 new_stage.rangeChanged.connect(self._on_waveform_range_changed)
                 new_stage.seekRequested.connect(self._player.seek)
                 new_stage.abToggled.connect(self._on_waveform_ab_toggled)
+
+                if self._current_file:
+                    new_stage.load_audio_preview(self._current_file)
+
                 self._player.set_loop(
                     self.btn_transport_loop.isChecked(),
                     new_stage._start_sec,
                     new_stage._end_sec,
                 )
+                dur = new_stage._duration
+                if dur > 0.0:
+                    self._sync_trimmer_bounds(dur, new_stage._start_sec, new_stage._end_sec)
             elif isinstance(new_stage, StemDeckStage):
                 new_stage.stemSoloToggled.connect(self._player.set_stem_solo)
                 new_stage.stemMuteToggled.connect(self._player.set_stem_mute)
@@ -1247,14 +1285,107 @@ class WorkspacePage(QWidget):
         if self._player.current_file:
             self._meter_engine.load_file(self._player.current_file)
 
-    def _on_waveform_range_changed(self, start_sec: float, end_sec: float) -> None:
+    def _get_current_file_duration(self) -> float:
+        """Get the duration of the current audio file in seconds."""
+        if isinstance(self._custom_stage_widget, WaveformStage) and self._custom_stage_widget._duration > 0:
+            return float(self._custom_stage_widget._duration)
+        if hasattr(self, "_player") and self._player.duration > 0:
+            return float(self._player.duration)
+        if self._current_file:
+            try:
+                import soundfile as sf
+                info = sf.info(self._current_file)
+                return float(info.duration)
+            except Exception:
+                pass
+            try:
+                from src.audio.metadata import probe
+                info = probe(Path(self._current_file))
+                return float(info.duration)
+            except Exception:
+                pass
+        return 0.0
 
+    def _sync_trimmer_bounds(self, duration: float, start_sec: float = 0.0, end_sec: Optional[float] = None) -> None:
+        """Update trimmer parameter bounds and values to match the actual duration of the loaded audio file."""
+        if duration <= 0:
+            return
+
+        target_end = end_sec if (end_sec is not None and end_sec > 0) else duration
+
+        start_ctrl = self._rack_controller.controls.get("start_sec")
+        end_ctrl = self._rack_controller.controls.get("end_sec")
+
+        if start_ctrl and hasattr(start_ctrl, "setRange"):
+            start_ctrl.blockSignals(True)
+            start_ctrl.setRange(0.0, duration, getattr(start_ctrl, "_step", 0.1))
+            start_ctrl.setValue(start_sec)
+            start_ctrl.blockSignals(False)
+
+        if end_ctrl and hasattr(end_ctrl, "setRange"):
+            end_ctrl.blockSignals(True)
+            end_ctrl.setRange(0.0, duration, getattr(end_ctrl, "_step", 0.1))
+            end_ctrl.setValue(target_end)
+            end_ctrl.blockSignals(False)
+
+        if isinstance(self._custom_stage_widget, WaveformStage):
+            self._custom_stage_widget.blockSignals(True)
+            self._custom_stage_widget.set_range(start_sec, target_end)
+            self._custom_stage_widget.blockSignals(False)
+
+        self._player.set_loop(self.btn_transport_loop.isChecked(), start_sec, target_end)
+
+    def _on_trim_knob_changed(self) -> None:
+        """Handle user adjusting start_sec or end_sec knobs in Cluster A."""
+        start_ctrl = self._rack_controller.controls.get("start_sec")
+        end_ctrl = self._rack_controller.controls.get("end_sec")
+        if not (start_ctrl and end_ctrl and hasattr(start_ctrl, "value") and hasattr(end_ctrl, "value")):
+            return
+
+        s_val = float(start_ctrl.value())
+        e_val = float(end_ctrl.value())
+
+        # Ensure start_sec does not exceed end_sec
+        sender = self.sender()
+        if sender is start_ctrl and s_val > e_val:
+            e_val = min(float(getattr(end_ctrl, "_max", s_val)), s_val + 0.1)
+            end_ctrl.blockSignals(True)
+            end_ctrl.setValue(e_val)
+            end_ctrl.blockSignals(False)
+        elif sender is end_ctrl and e_val < s_val:
+            s_val = max(0.0, e_val - 0.1)
+            start_ctrl.blockSignals(True)
+            start_ctrl.setValue(s_val)
+            start_ctrl.blockSignals(False)
+
+        if isinstance(self._custom_stage_widget, WaveformStage):
+            self._custom_stage_widget.blockSignals(True)
+            self._custom_stage_widget.set_range(s_val, e_val)
+            self._custom_stage_widget.blockSignals(False)
+
+        self._player.set_loop(self.btn_transport_loop.isChecked(), s_val, e_val)
+
+    def _on_waveform_range_changed(self, start_sec: float, end_sec: float) -> None:
         """Sync WaveformStage range markers with trimmer controls in Slot 3 and player loop."""
-        for name, widget in self._rack_controller.controls.items():
-            if name == "start_sec" and hasattr(widget, "setValue"):
-                widget.setValue(start_sec)
-            elif name == "end_sec" and hasattr(widget, "setValue"):
-                widget.setValue(end_sec)
+        dur = self._get_current_file_duration()
+        max_dur = max(dur, end_sec, start_sec, 1.0)
+        start_ctrl = self._rack_controller.controls.get("start_sec")
+        end_ctrl = self._rack_controller.controls.get("end_sec")
+
+        if start_ctrl and hasattr(start_ctrl, "setValue"):
+            start_ctrl.blockSignals(True)
+            if hasattr(start_ctrl, "setRange"):
+                start_ctrl.setRange(0.0, max_dur, getattr(start_ctrl, "_step", 0.1))
+            start_ctrl.setValue(start_sec)
+            start_ctrl.blockSignals(False)
+
+        if end_ctrl and hasattr(end_ctrl, "setValue"):
+            end_ctrl.blockSignals(True)
+            if hasattr(end_ctrl, "setRange"):
+                end_ctrl.setRange(0.0, max_dur, getattr(end_ctrl, "_step", 0.1))
+            end_ctrl.setValue(end_sec)
+            end_ctrl.blockSignals(False)
+
         self._player.set_loop(self.btn_transport_loop.isChecked(), start_sec, end_sec)
 
     # --- Module Configuration ---
@@ -1558,6 +1689,8 @@ class WorkspacePage(QWidget):
                     out1 = trimmer.process_file(p, output_dir=output_dir, options=options, on_progress=p1, cancel_flag=cancel_token)
                     if cancel_token and cancel_token.is_set():
                         break
+                    if out1 is None or not Path(out1).exists():
+                        continue
                     def p2(sub_f, m):
                         if on_progress:
                             on_progress((i / total) + 0.5 / total + (sub_f / (total * 2)), f"[{p.name}] Normalizing: {m}")

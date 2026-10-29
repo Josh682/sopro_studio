@@ -73,6 +73,10 @@ class BaseProcessor(ABC):
     metadata: ClassVar[ProcessorMetadata]
     processing_mode: ClassVar[ProcessingMode] = ProcessingMode.BATCH
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Allow subclasses to accept flexible constructor parameters (e.g. ffmpeg_bin)."""
+        pass
+
     def process_file(
         self,
         input_path: Path,

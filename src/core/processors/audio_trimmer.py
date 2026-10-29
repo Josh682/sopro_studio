@@ -30,10 +30,10 @@ class TrimOptions:
     fade_out_ms: float = 0.0
 
     def validate(self, total_duration: float):
-        if self.start_sec < 0 or self.end_sec > total_duration:
-            raise ValueError("Trim points out of bounds.")
+        if self.start_sec < 0 or self.end_sec > total_duration + 0.1:
+            raise ValueError(f"Trim points [{self.start_sec:.2f}s, {self.end_sec:.2f}s] out of bounds (file duration: {total_duration:.2f}s).")
         if self.start_sec >= self.end_sec:
-            raise ValueError("Start time must be before end time.")
+            raise ValueError(f"Start time ({self.start_sec:.2f}s) must be before end time ({self.end_sec:.2f}s).")
 
 
 class AudioTrimmer(BaseProcessor):
@@ -48,6 +48,10 @@ class AudioTrimmer(BaseProcessor):
         tags=["trim", "crop", "fade", "audio"],
     )
     processing_mode = ProcessingMode.FILE
+
+    def __init__(self, ffmpeg_bin: str | None = None, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.ffmpeg_bin = ffmpeg_bin
 
     def process_file(
         self,
@@ -94,8 +98,10 @@ class AudioTrimmer(BaseProcessor):
             except Exception:
                 duration = 0.0
 
-        # Validate bounds
+        # Validate bounds & default end_sec to full duration if 0
         if duration > 0.0:
+            if trim_opts.end_sec <= 0.0 or trim_opts.end_sec > duration:
+                trim_opts.end_sec = duration
             try:
                 trim_opts.validate(duration)
             except ValueError as ve:
@@ -120,7 +126,7 @@ class AudioTrimmer(BaseProcessor):
             on_progress(0.7, "Applying fades...")
         
         # 3. Apply Fades
-        data = buffer.samples
+        data = np.array(buffer.samples, copy=True)
         sr = buffer.sample_rate
         if trim_opts.fade_in_ms > 0:
             data = self._apply_fade_in(data, sr, trim_opts.fade_in_ms)
@@ -128,6 +134,7 @@ class AudioTrimmer(BaseProcessor):
             data = self._apply_fade_out(data, sr, trim_opts.fade_out_ms)
             
         buffer.samples = data
+        buffer.sample_rate = sr
 
         if cancel_flag and cancel_flag.is_set():
             return None
@@ -146,6 +153,8 @@ class AudioTrimmer(BaseProcessor):
 
     @staticmethod
     def _apply_fade_in(data: np.ndarray, sr: int, fade_ms: float) -> np.ndarray:
+        if not data.flags.writeable:
+            data = data.copy()
         fade_frames = int((fade_ms / 1000.0) * sr)
         fade_frames = min(fade_frames, len(data))
         if fade_frames <= 0:
@@ -156,11 +165,13 @@ class AudioTrimmer(BaseProcessor):
         if data.ndim > 1:
             curve = curve[:, np.newaxis]
             
-        data[:fade_frames] *= curve
+        data[:fade_frames] = data[:fade_frames] * curve
         return data
 
     @staticmethod
     def _apply_fade_out(data: np.ndarray, sr: int, fade_ms: float) -> np.ndarray:
+        if not data.flags.writeable:
+            data = data.copy()
         fade_frames = int((fade_ms / 1000.0) * sr)
         fade_frames = min(fade_frames, len(data))
         if fade_frames <= 0:
@@ -171,7 +182,7 @@ class AudioTrimmer(BaseProcessor):
         if data.ndim > 1:
             curve = curve[:, np.newaxis]
             
-        data[-fade_frames:] *= curve
+        data[-fade_frames:] = data[-fade_frames:] * curve
         return data
 
     @classmethod
@@ -182,6 +193,7 @@ class AudioTrimmer(BaseProcessor):
                 type="float",
                 default=0.0,
                 min_value=0.0,
+                max_value=3600.0,
                 step=0.1,
                 unit="s",
                 description="Trim start time in seconds."
@@ -191,6 +203,7 @@ class AudioTrimmer(BaseProcessor):
                 type="float",
                 default=0.0,
                 min_value=0.0,
+                max_value=3600.0,
                 step=0.1,
                 unit="s",
                 description="Trim end time in seconds (0 = full length)."

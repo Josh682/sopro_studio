@@ -96,6 +96,8 @@ class WaveformStage(QWidget):
         # Range Selection Markers
         self._start_sec: float = 0.0
         self._end_sec: float = 0.0
+        self._drag_mode: Optional[str] = None  # None, "start", "end", "range", "scrub"
+        self._range_anchor_sec: float = 0.0
 
         # Real-time Playhead & Scrubbing State
         self._playhead_sec: float = 0.0
@@ -316,34 +318,93 @@ class WaveformStage(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self._is_scrubbing = True
-            self.scrubbingActive.emit(True)
             pos_x = event.position().x() if hasattr(event, "position") else float(event.x())
-            t = self._x_to_time(pos_x)
-            self.set_playhead(t)
-            self.seekRequested.emit(t)
-            event.accept()
+            w = float(self.width())
+            dur = self._duration if self._duration > 0 else 60.0
+
+            x_start = 16.0 + (self._start_sec / dur) * (w - 32.0)
+            x_end = 16.0 + (self._end_sec / dur) * (w - 32.0)
+
+            # Check if user clicked near start handle (within 10px)
+            if abs(pos_x - x_start) <= 10.0:
+                self._drag_mode = "start"
+                event.accept()
+                return
+            # Check if user clicked near end handle (within 10px)
+            elif abs(pos_x - x_end) <= 10.0:
+                self._drag_mode = "end"
+                event.accept()
+                return
+            # Check if shift was held (range selection drag)
+            elif event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                self._drag_mode = "range"
+                self._range_anchor_sec = self._x_to_time(pos_x)
+                event.accept()
+                return
+            else:
+                self._drag_mode = "scrub"
+                self._is_scrubbing = True
+                self.scrubbingActive.emit(True)
+                t = self._x_to_time(pos_x)
+                self.set_playhead(t)
+                self.seekRequested.emit(t)
+                event.accept()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self._is_scrubbing:
-            pos_x = event.position().x() if hasattr(event, "position") else float(event.x())
+        pos_x = event.position().x() if hasattr(event, "position") else float(event.x())
+        w = float(self.width())
+        dur = self._duration if self._duration > 0 else 60.0
+
+        if self._drag_mode == "start":
+            new_s = max(0.0, min(self._end_sec - 0.1, self._x_to_time(pos_x)))
+            self._start_sec = new_s
+            self.rangeChanged.emit(self._start_sec, self._end_sec)
+            self.update()
+            event.accept()
+            return
+        elif self._drag_mode == "end":
+            new_e = min(dur, max(self._start_sec + 0.1, self._x_to_time(pos_x)))
+            self._end_sec = new_e
+            self.rangeChanged.emit(self._start_sec, self._end_sec)
+            self.update()
+            event.accept()
+            return
+        elif self._drag_mode == "range":
+            t = self._x_to_time(pos_x)
+            s = min(self._range_anchor_sec, t)
+            e = max(self._range_anchor_sec, t)
+            if e - s < 0.1:
+                e = s + 0.1
+            self._start_sec = max(0.0, s)
+            self._end_sec = min(dur, e)
+            self.rangeChanged.emit(self._start_sec, self._end_sec)
+            self.update()
+            event.accept()
+            return
+        elif self._drag_mode == "scrub" and self._is_scrubbing:
             t = self._x_to_time(pos_x)
             self.set_playhead(t)
             self.seekRequested.emit(t)
             event.accept()
+            return
+
+        # Not dragging: update cursor if hovering near handles
+        x_start = 16.0 + (self._start_sec / dur) * (w - 32.0)
+        x_end = 16.0 + (self._end_sec / dur) * (w - 32.0)
+        if abs(pos_x - x_start) <= 10.0 or abs(pos_x - x_end) <= 10.0:
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
         else:
-            super().mouseMoveEvent(event)
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.MouseButton.LeftButton and self._is_scrubbing:
-            self._is_scrubbing = False
-            self.scrubbingActive.emit(False)
-            pos_x = event.position().x() if hasattr(event, "position") else float(event.x())
-            t = self._x_to_time(pos_x)
-            self.set_playhead(t)
-            self.seekRequested.emit(t)
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._drag_mode == "scrub":
+                self._is_scrubbing = False
+                self.scrubbingActive.emit(False)
+            self._drag_mode = None
             event.accept()
         else:
             super().mouseReleaseEvent(event)
@@ -466,14 +527,54 @@ class WaveformStage(QWidget):
                     p, self._samples_a, self._accent_color, wave_top, wave_h, mid_y, w, is_ghosted=False
                 )
 
-            # Active Range Selection Overlay
+            # Active Range Selection Overlay with Draggable Handles & Dimmed Outside
             if self._duration > 0 and self._end_sec > self._start_sec:
-                x_start = 16 + (self._start_sec / self._duration) * (w - 32.0)
-                x_end = 16 + (self._end_sec / self._duration) * (w - 32.0)
+                x_start = 16.0 + (self._start_sec / self._duration) * (w - 32.0)
+                x_end = 16.0 + (self._end_sec / self._duration) * (w - 32.0)
+
+                # Shading outside range (inactive audio regions)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(0, 0, 0, 150))
+                if x_start > 16.0:
+                    p.drawRect(QRectF(16.0, wave_top, x_start - 16.0, wave_h))
+                if x_end < w - 16.0:
+                    p.drawRect(QRectF(x_end, wave_top, (w - 16.0) - x_end, wave_h))
+
+                # Highlight active selected audio region
                 range_rect = QRectF(x_start, wave_top, x_end - x_start, wave_h)
-                p.setBrush(QColor(245, 158, 11, 25))
-                p.setPen(QPen(QColor(self._accent_color), 1.5))
+                p.setBrush(QColor(245, 158, 11, 20))
+                p.setPen(QPen(QColor(self._accent_color), 1.2))
                 p.drawRect(range_rect)
+
+                # Start Handle & Line
+                p.setPen(QPen(QColor("#F59E0B"), 2.0))
+                p.drawLine(QPointF(x_start, wave_top), QPointF(x_start, wave_top + wave_h))
+                # Start flag handle at top
+                flag_start = QPainterPath()
+                flag_start.moveTo(x_start, wave_top)
+                flag_start.lineTo(x_start + 6, wave_top - 4)
+                flag_start.lineTo(x_start + 6, wave_top - 14)
+                flag_start.lineTo(x_start - 2, wave_top - 14)
+                flag_start.lineTo(x_start - 2, wave_top - 4)
+                flag_start.closeSubpath()
+                p.setBrush(QColor("#F59E0B"))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawPath(flag_start)
+
+                # End Handle & Line
+                p.setPen(QPen(QColor("#F59E0B"), 2.0))
+                p.drawLine(QPointF(x_end, wave_top), QPointF(x_end, wave_top + wave_h))
+                # End flag handle at top
+                flag_end = QPainterPath()
+                flag_end.moveTo(x_end, wave_top)
+                flag_end.lineTo(x_end + 2, wave_top - 4)
+                flag_end.lineTo(x_end + 2, wave_top - 14)
+                flag_end.lineTo(x_end - 6, wave_top - 14)
+                flag_end.lineTo(x_end - 6, wave_top - 4)
+                flag_end.closeSubpath()
+                p.setBrush(QColor("#F59E0B"))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawPath(flag_end)
 
             # Dynamic Playhead Cursor & Halo (Liquid 60 FPS Animation)
             if self._duration > 0:

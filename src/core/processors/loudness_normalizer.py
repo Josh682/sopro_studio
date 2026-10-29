@@ -32,9 +32,10 @@ class LoudnessNormalizer(BaseProcessor):
     )
     processing_mode = ProcessingMode.FILE
 
-    def __init__(self) -> None:
+    def __init__(self, ffmpeg_bin: str | None = None, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
         app_config = AppConfig()
-        self._ffmpeg_bin = app_config.ffmpeg_path
+        self._ffmpeg_bin = ffmpeg_bin or app_config.ffmpeg_path
 
     @classmethod
     def get_parameter_descriptors(cls) -> list[ParameterDescriptor]:
